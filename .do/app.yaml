@@ -1,0 +1,116 @@
+###############################################################
+#  .do/app.yaml  —  DigitalOcean App Platform spec
+#
+#  Este archivo define toda la infraestructura en DO:
+#    - Un servicio web (backend FastAPI)
+#    - Un componente estático (frontend)
+#    - Una base de datos PostgreSQL administrada
+#
+#  Cómo usarlo:
+#    doctl apps create --spec .do/app.yaml
+#  O subiendo el repo a GitHub y usando la UI de DO.
+###############################################################
+
+name: canchayas
+region: nyc   # New York es el datacenter más cercano a Argentina en DO
+
+# ── Servicios ──────────────────────────────────────────────
+services:
+  - name: backend
+    # DO construye la imagen desde el Dockerfile en la raíz
+    dockerfile_path: Dockerfile
+    # Rama del repo a deployar
+    github:
+      repo: TU_USUARIO/TU_REPO        # ← REEMPLAZAR con tu usuario/repo de GitHub
+      branch: main
+      deploy_on_push: true             # deploy automático en cada push a main
+
+    # Puerto interno que expone el contenedor
+    http_port: 8000
+
+    # Instancia más pequeña (~$5/mes, cubierta por el crédito)
+    instance_size_slug: basic-xxs
+    instance_count: 1
+
+    # Variables de entorno del backend
+    # Las marcadas con "value" son fijas.
+    # Las marcadas con "scope: RUN_TIME" + sin value se completan en el panel.
+    envs:
+      - key: ENV
+        value: production
+        scope: RUN_TIME
+
+      # DO inyecta la DB connection string automáticamente
+      # si usás el nombre "db" que definimos abajo en databases:
+      - key: DATABASE_URL
+        value: ${db.DATABASE_URL}
+        scope: RUN_TIME
+
+      # CORS: tu dominio del frontend en DO (se actualiza tras el primer deploy)
+      # Formato: https://canchayas-frontend-xxxxx.ondigitalocean.app
+      - key: CORS_ORIGINS
+        value: "COMPLETAR_TRAS_PRIMER_DEPLOY"
+        scope: RUN_TIME
+
+      # URL pública del backend (la genera DO, completar tras primer deploy)
+      # Formato: https://canchayas-backend-xxxxx.ondigitalocean.app
+      - key: BACKEND_URL
+        value: "COMPLETAR_TRAS_PRIMER_DEPLOY"
+        scope: RUN_TIME
+
+      # URL del frontend (para back_urls de Mercado Pago)
+      - key: FRONTEND_URL
+        value: "COMPLETAR_TRAS_PRIMER_DEPLOY"
+        scope: RUN_TIME
+
+      # Token de MP — completar en el panel de DO (Settings → App → envs)
+      # NO poner el token directamente acá si el repo es público
+      - key: MP_ACCESS_TOKEN
+        value: "COMPLETAR_EN_PANEL_DO"
+        scope: RUN_TIME
+
+      # Resend (opcional)
+      - key: RESEND_API_KEY
+        value: ""
+        scope: RUN_TIME
+      - key: FROM_EMAIL
+        value: "noreply@example.com"
+        scope: RUN_TIME
+
+    # Healthcheck: DO verifica que el backend esté sano antes de marcar deploy OK
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 30
+
+    # Comando que corre después del build (crea tablas + seed)
+    # Se ejecuta solo en el primer deploy (si ya existen datos, seed los saltea)
+    run_command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# ── Frontend estático ──────────────────────────────────────
+static_sites:
+  - name: frontend
+    github:
+      repo: TU_USUARIO/TU_REPO        # ← MISMO repo
+      branch: main
+      deploy_on_push: true
+    # Directorio con los archivos estáticos
+    source_dir: frontend
+    # Archivo de entrada
+    index_document: index.html
+    # Para rutas no encontradas (SPA), servir index.html
+    error_document: index.html
+    # Sin build step (HTML/JS/CSS puro)
+    build_command: ""
+    output_dir: ""
+
+# ── Base de datos PostgreSQL administrada ──────────────────
+databases:
+  - name: db
+    engine: PG           # PostgreSQL
+    version: "15"
+    # dev-database es el tier básico (~$7/mes), más que suficiente para el TP
+    # Con $200 de crédito tenés ~28 meses de DB
+    size: db-s-dev-database
+    num_nodes: 1
+    # DO hace backups automáticos diarios

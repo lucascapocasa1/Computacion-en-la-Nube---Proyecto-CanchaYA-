@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>⚽ CanchaYa — Reservá tu cancha</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <div class="logo">Cancha<span>Ya</span> ⚽</div>
+      <div class="tagline" id="header-tagline">Reservá tu cancha de fútbol online</div>
+    </div>
+    <nav class="header-nav" id="header-nav"></nav>
+  </header>
+
+  <main>
+
+    <!-- ══════════════════════════════════════════════
+         VISTA COMPRADOR
+    ══════════════════════════════════════════════ -->
+    <div id="vista-comprador">
+
+      <div class="tabs">
+        <button class="tab active" data-vista="turnos"    onclick="mostrarVistaComprador(this)">🏟️ Turnos</button>
+        <button class="tab"        data-vista="historial" onclick="mostrarVistaComprador(this)">📋 Mis reservas</button>
+        <button class="tab"        data-vista="fichas"    onclick="mostrarVistaComprador(this)">⭐ Mis fichas</button>
+      </div>
+
+      <!-- Turnos disponibles -->
+      <div class="vista-comp active" id="comp-turnos">
+        <div class="section-title">Turnos disponibles</div>
+        <div class="filters">
+          <div class="filter-group">
+            <label>Cancha</label>
+            <select id="filtro-cancha"><option value="">Todas las canchas</option></select>
+          </div>
+          <div class="filter-group">
+            <label>Fecha</label>
+            <input type="date" id="filtro-fecha" />
+          </div>
+        </div>
+        <div id="loader"><div class="spinner"></div><p>Cargando turnos...</p></div>
+        <div id="turnos-grid"></div>
+        <div id="empty-state" style="display:none">
+          <div class="icon">🏟️</div>
+          <p>No hay turnos disponibles para los filtros seleccionados.</p>
+        </div>
+      </div>
+
+      <!-- Mis reservas -->
+      <div class="vista-comp" id="comp-historial">
+        <div class="section-title">Mis reservas</div>
+        <div id="historial-content">
+          <div class="login-prompt">
+            <div class="icon">🔐</div>
+            <p>Iniciá sesión para ver tu historial de reservas.</p>
+            <button class="btn btn-primary" style="width:auto;padding:10px 24px" onclick="abrirModalAuth()">Iniciar sesión</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mis fichas -->
+      <div class="vista-comp" id="comp-fichas">
+        <div class="section-title">Mis fichas de fidelidad</div>
+        <div id="fichas-content">
+          <div class="login-prompt">
+            <div class="icon">⭐</div>
+            <p>Iniciá sesión para ver tus fichas.<br>
+            <small>Cada reserva pagada suma 1 ficha. Con 10 fichas en la misma cancha, canjeás un turno gratis.</small></p>
+            <button class="btn btn-primary" style="width:auto;padding:10px 24px" onclick="abrirModalAuth()">Iniciar sesión</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /vista-comprador -->
+
+    <!-- ══════════════════════════════════════════════
+         VISTA DUEÑO (exclusiva, reemplaza todo lo de arriba)
+    ══════════════════════════════════════════════ -->
+    <div id="vista-duenio" style="display:none">
+
+      <!-- Header del dashboard -->
+      <div class="dashboard-header">
+        <div>
+          <div class="section-title" style="margin-bottom:4px">📊 Panel de gestión</div>
+          <div id="duenio-cancha-nombre" style="color:var(--muted);font-size:.9rem"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-nav active" onclick="cargarDashboard()">🔄 Actualizar</button>
+          <button class="btn-nav" onclick="cambiarFechaDashboard(-1)">← Día anterior</button>
+          <input type="date" id="dashboard-fecha" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-family:var(--ff-body)" onchange="cargarDashboard()" />
+          <button class="btn-nav" onclick="cambiarFechaDashboard(1)">Día siguiente →</button>
+        </div>
+      </div>
+
+      <!-- Tarjetas de estadísticas -->
+      <div class="dashboard-stats" id="dashboard-stats">
+        <div class="stat-card"><div class="stat-num" id="stat-aprobadas">—</div><div class="stat-label">✅ Reservas pagadas</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-pendientes">—</div><div class="stat-label">⏳ Pendientes de pago</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-canjes">—</div><div class="stat-label">⭐ Canjes de fichas</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-ingresos">—</div><div class="stat-label">💰 Ingresos totales</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-fichas">—</div><div class="stat-label">🎫 Fichas emitidas</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-libres-hoy">—</div><div class="stat-label">🕓 Turnos libres hoy</div></div>
+      </div>
+
+      <!-- Tabs del dashboard -->
+      <div class="tabs" style="margin-bottom:20px">
+        <button class="tab active" data-dtab="hoy"      onclick="mostrarTabDashboard(this)">📅 Hoy</button>
+        <button class="tab"        data-dtab="reservas" onclick="mostrarTabDashboard(this)">📋 Todas las reservas</button>
+        <button class="tab"        data-dtab="semana"   onclick="mostrarTabDashboard(this)">📆 Próximos días</button>
+        <button class="tab"        data-dtab="pendientes" onclick="mostrarTabDashboard(this)">⏳ Pendientes</button>
+      </div>
+
+      <!-- Tab: Hoy -->
+      <div class="dtab active" id="dtab-hoy">
+        <div class="section-title">Turnos de hoy</div>
+        <div id="tabla-hoy-wrapper" style="overflow-x:auto">
+          <table class="dashboard-table" id="tabla-hoy">
+            <thead><tr>
+              <th>Horario</th><th>Estado</th><th>Cliente</th>
+              <th>Email</th><th>Teléfono</th><th>Tipo pago</th><th>Acciones</th>
+            </tr></thead>
+            <tbody id="tbody-hoy"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Todas las reservas -->
+      <div class="dtab" id="dtab-reservas">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-end">
+          <div class="filter-group">
+            <label>Filtrar por fecha</label>
+            <input type="date" id="reservas-filtro-fecha" onchange="cargarTablaReservas()" />
+          </div>
+          <div class="filter-group">
+            <label>Estado</label>
+            <select id="reservas-filtro-estado" onchange="cargarTablaReservas()">
+              <option value="">Todos</option>
+              <option value="aprobado">Pagados</option>
+              <option value="pendiente">Pendientes</option>
+            </select>
+          </div>
+          <button class="btn-nav" onclick="cargarTablaReservas()">Buscar</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="dashboard-table">
+            <thead><tr>
+              <th>Reserva #</th><th>Fecha</th><th>Horario</th><th>Cliente</th>
+              <th>Email</th><th>Teléfono</th><th>Estado</th><th>Tipo pago</th><th>Creada el</th><th>Acciones</th>
+            </tr></thead>
+            <tbody id="tbody-reservas"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Próximos días -->
+      <div class="dtab" id="dtab-semana">
+        <div class="section-title">Ocupación próximos 7 días</div>
+        <div id="tabla-semana-wrapper" style="overflow-x:auto">
+          <table class="dashboard-table">
+            <thead><tr>
+              <th>Fecha</th><th>Día</th><th>Total turnos</th>
+              <th>Libres</th><th>Pagados</th><th>Pendientes</th><th>Ocupación</th>
+            </tr></thead>
+            <tbody id="tbody-semana"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Pendientes (para verificar pagos) -->
+      <div class="dtab" id="dtab-pendientes">
+        <div class="section-title">Reservas pendientes de pago</div>
+        <p style="color:var(--muted);font-size:.85rem;margin-bottom:16px">
+          Si un cliente pagó pero sigue apareciendo en pendiente, hacé click en
+          <strong style="color:var(--green)">Verificar pago</strong> para consultar el estado en Mercado Pago.
+        </p>
+        <div id="lista-pendientes"></div>
+      </div>
+
+    </div><!-- /vista-duenio -->
+
+  </main>
+
+  <!-- ═══════════════════════════ MODALES ═══════════════════════════ -->
+
+  <!-- Modal: Auth -->
+  <div class="modal-overlay" id="modal-auth">
+    <div class="modal">
+      <button class="modal-close" onclick="cerrarModalAuth()">✕</button>
+      <h2 id="auth-titulo">Iniciar sesión</h2>
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="auth-tab-login"    onclick="cambiarAuthTab('login')">Ingresar</button>
+        <button class="auth-tab"        id="auth-tab-registro" onclick="cambiarAuthTab('registro')">Crear cuenta</button>
+      </div>
+      <div id="auth-form-login">
+        <div class="form-group"><label>Email</label><input type="email" id="login-email" placeholder="tu@email.com" /></div>
+        <div class="form-group"><label>Contraseña</label><input type="password" id="login-password" placeholder="••••••" /></div>
+        <button class="btn btn-primary" id="btn-login" onclick="hacerLogin()">Ingresar</button>
+      </div>
+      <div id="auth-form-registro" style="display:none">
+        <div class="form-group"><label>Nombre completo</label><input type="text" id="reg-nombre" placeholder="Juan García" /></div>
+        <div class="form-group"><label>Email</label><input type="email" id="reg-email" placeholder="tu@email.com" /></div>
+        <div class="form-group"><label>Contraseña (mín. 6 caracteres)</label><input type="password" id="reg-password" placeholder="••••••" /></div>
+        <button class="btn btn-primary" id="btn-registro" onclick="hacerRegistro()">Crear cuenta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Reserva -->
+  <div class="modal-overlay" id="modal-reserva">
+    <div class="modal">
+      <button class="modal-close" onclick="cerrarModalReserva()">✕</button>
+      <h2>Reservar turno</h2>
+      <p class="modal-subtitle">El turno se confirma únicamente al completar el pago</p>
+      <div class="turno-info-box">
+        <div class="info-item"><span class="info-label">Cancha</span><span class="info-value" id="info-cancha">—</span></div>
+        <div class="info-item"><span class="info-label">Tipo</span><span class="info-value" id="info-tipo">—</span></div>
+        <div class="info-item"><span class="info-label">Fecha</span><span class="info-value" id="info-fecha">—</span></div>
+        <div class="info-item"><span class="info-label">Horario</span><span class="info-value" id="info-horario">—</span></div>
+        <div class="info-item"><span class="info-label">Precio</span><span class="info-value" id="info-precio">—</span></div>
+      </div>
+      <div id="form-reserva">
+        <div class="form-group"><label>Nombre completo *</label><input type="text" id="input-nombre" placeholder="Juan García" /></div>
+        <div class="form-group"><label>Email *</label><input type="email" id="input-email" placeholder="juan@ejemplo.com" /></div>
+        <div class="form-group"><label>Teléfono (opcional)</label><input type="tel" id="input-telefono" placeholder="+54 9 11 1234-5678" /></div>
+        <button class="btn btn-primary" id="btn-confirmar" onclick="confirmarReserva()">Reservar y pagar</button>
+        <button class="btn btn-secondary" onclick="cerrarModalReserva()">Cancelar</button>
+      </div>
+      <div id="success-state" style="display:none">
+        <div class="success-icon">🎉</div>
+        <h3>¡Reserva creada!</h3>
+        <div class="reserva-id-badge" id="badge-reserva-id">#0</div>
+        <p id="success-msg">Completá el pago para confirmar el turno.</p>
+        <br/>
+        <button class="btn btn-primary" id="btn-pagar" onclick="abrirModalPago()">💳 Pagar ahora</button>
+        <button class="btn btn-secondary" onclick="cerrarTodo()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Pago -->
+  <div class="modal-overlay" id="modal-pago">
+    <div class="modal">
+      <button class="modal-close" onclick="cerrarModalPago()">✕</button>
+      <h2>Pagar reserva</h2>
+      <p class="modal-subtitle" id="pago-subtitle">Elegí cómo querés pagar</p>
+      <div class="pago-options">
+        <button class="pago-btn" onclick="pagarConMP()">
+          <span class="pago-icon">💳</span>
+          <span>
+            <span class="pago-title">Mercado Pago</span>
+            <span class="pago-desc">Tarjeta, débito o efectivo (sandbox)</span>
+          </span>
+        </button>
+        <button class="pago-btn" onclick="pagarMock('approved')">
+          <span class="pago-icon">✅</span>
+          <span>
+            <span class="pago-title">Simular pago aprobado</span>
+            <span class="pago-desc">Demo: confirmar sin pasarela de pago</span>
+          </span>
+        </button>
+        <button class="pago-btn" onclick="pagarMock('rejected')">
+          <span class="pago-icon">❌</span>
+          <span>
+            <span class="pago-title">Simular pago rechazado</span>
+            <span class="pago-desc">Demo: probar el flujo de rechazo</span>
+          </span>
+        </button>
+      </div>
+      <!-- Aparece después de abrir MP, para verificar el resultado -->
+      <div id="mp-verificar-section" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+        <p style="color:var(--muted);font-size:.83rem;margin-bottom:10px">
+          ¿Ya pagaste en Mercado Pago? Hacé click para confirmar:
+        </p>
+        <button class="btn btn-primary" onclick="verificarPagoMP()">🔍 Verificar pago de MP</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Canje de fichas -->
+  <div class="modal-overlay" id="modal-canje">
+    <div class="modal">
+      <button class="modal-close" onclick="document.getElementById('modal-canje').classList.remove('open')">✕</button>
+      <h2>Canjear fichas ⭐</h2>
+      <p class="modal-subtitle" id="canje-subtitle">Elegí el turno que querés canjear</p>
+      <div class="filters" style="margin-bottom:16px">
+        <div class="filter-group">
+          <label>Fecha</label>
+          <input type="date" id="canje-fecha" onchange="cargarTurnosCanje(this.value)" />
+        </div>
+      </div>
+      <div id="canje-turnos-lista" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+        <p style="color:var(--muted);text-align:center;padding:20px">Seleccioná una fecha</p>
+      </div>
+      <button class="btn btn-secondary" style="margin-top:14px" onclick="document.getElementById('modal-canje').classList.remove('open')">Cancelar</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
