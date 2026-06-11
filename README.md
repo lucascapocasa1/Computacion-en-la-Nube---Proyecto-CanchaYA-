@@ -1,7 +1,19 @@
-# ⚽ CanchaYa — Gestión de Reservas de Canchas de Fútbol
+# ⚽ CanchaYa — Sistema de Reservas con Pagos y Fidelización
 
-MVP para el Trabajo Final de "Computación en la Nube".  
-Permite ver horarios disponibles, reservar turnos y simular pagos.
+Trabajo Final de "Computación en la Nube".  
+Plataforma web para gestión de turnos de canchas de fútbol 5 y 7 con reservas online, pagos reales vía Mercado Pago, sistema de fidelización y panel de gestión para dueños.
+
+---
+
+## 🚀 Funcionalidades
+
+- **👤 Autenticación local** — Registro y login con JWT. Dos roles: Comprador y Dueño de cancha.
+- **⚽ Reserva de turnos** — Visualización de canchas y horarios disponibles por fecha, con filtros.
+- **💳 Pago con Mercado Pago** — Integración con Checkout Pro (sandbox). Confirmación activa de pago sin depender del webhook.
+- **🎟️ Sistema de fichas** — Cada reserva pagada suma 1 ficha por cancha. Con 10 fichas se canjea un turno gratis en esa misma cancha.
+- **❌ Cancelación de reservas** — El turno se libera automáticamente si el pago no se completa.
+- **📋 Historial de reservas** — El comprador ve todas sus reservas con estado de pago actualizable.
+- **📊 Panel del dueño** — Cada cancha tiene su usuario. El dueño ve: turnos del día, todas las reservas, ocupación semanal y lista de pendientes con verificación de pago.
 
 ---
 
@@ -9,33 +21,42 @@ Permite ver horarios disponibles, reservar turnos y simular pagos.
 
 ```
 canchas/
+├── .do/
+│   └── app.yaml               # Spec de deploy para DigitalOcean App Platform
 ├── backend/
 │   ├── core/
-│   │   └── config.py          # Variables de entorno (pydantic-settings)
+│   │   ├── config.py          # Variables de entorno (pydantic-settings)
+│   │   └── security.py        # Hash de contraseñas (bcrypt) y JWT
 │   ├── db/
 │   │   └── database.py        # Engine, SessionLocal, Base, get_db()
 │   ├── models/
-│   │   └── models.py          # ORM: Cancha, Turno, Reserva
+│   │   └── models.py          # ORM: Cancha, Turno, Reserva, Usuario, Ficha
 │   ├── schemas/
 │   │   └── schemas.py         # Pydantic: validación de requests/responses
 │   ├── routers/
+│   │   ├── auth.py            # POST /auth/registro, /auth/login, GET /auth/me
 │   │   ├── turnos.py          # GET /canchas, GET /turnos
-│   │   ├── reservas.py        # POST /reservas, GET /reservas/{id}
-│   │   └── pagos.py           # POST /pagos/mock-confirmar, webhook MP
+│   │   ├── reservas.py        # POST /reservas, historial, fichas, canje
+│   │   ├── pagos.py           # Link MP, verificación activa, webhook, mock
+│   │   └── dashboard.py       # Panel exclusivo para dueños de cancha
 │   ├── services/
-│   │   └── email.py           # Envío de emails con Resend
+│   │   └── email.py           # Emails transaccionales con Resend
 │   ├── main.py                # Punto de entrada FastAPI
-│   ├── seed.py                # Datos iniciales (canchas + turnos)
+│   ├── seed.py                # Datos iniciales: canchas, turnos y usuarios dueños
 │   ├── requirements.txt
-│   └── .env.example
+│   ├── .env.example
+│   └── .env                   # ← no commitear
 ├── frontend/
-│   ├── index.html             # Interfaz principal
+│   ├── index.html             # Interfaz principal (comprador + dueño)
 │   ├── app.js                 # Lógica del frontend
-│   ├── pago-exitoso.html      # Redirect de MP tras pago OK
+│   ├── styles.css             # Todos los estilos
+│   ├── config.js              # API_BASE (apunta al backend)
+│   ├── pago-exitoso.html      # Redirect de MP tras pago aprobado
 │   └── pago-fallido.html      # Redirect de MP tras pago rechazado
-├── render.yaml                # Deploy en Render.com (backend + DB)
+├── Dockerfile                 # Imagen Docker para DigitalOcean / cualquier VPS
+├── DEPLOY_DIGITALOCEAN.md     # Guía paso a paso de deploy en DO
+├── render.yaml                # Deploy alternativo en Render.com
 ├── vercel.json                # Deploy del frontend en Vercel
-├── Dockerfile                 # Imagen Docker para cualquier plataforma
 └── README.md
 ```
 
@@ -51,26 +72,47 @@ canchas
   precio_hora   NUMERIC(10,2)
   activa        BOOLEAN
 
+usuarios
+  id            PK
+  nombre        VARCHAR(150)
+  email         VARCHAR(200)   UNIQUE
+  password_hash VARCHAR(200)   ← bcrypt, nunca texto plano
+  rol           ENUM('comprador', 'duenio')
+  cancha_id     FK → canchas.id   nullable  ← solo para dueños
+  activo        BOOLEAN
+  created_at    TIMESTAMP
+
 turnos
   id            PK
   cancha_id     FK → canchas.id
   fecha         DATE
   hora_inicio   TIME
   hora_fin      TIME
-  disponible    BOOLEAN
-  UNIQUE(cancha_id, fecha, hora_inicio)   ← evita duplicados
+  disponible    BOOLEAN        ← False solo cuando el pago fue APROBADO
+  UNIQUE(cancha_id, fecha, hora_inicio)
 
 reservas
   id                PK
-  turno_id          FK → turnos.id  UNIQUE  ← 1 reserva por turno
+  turno_id          FK → turnos.id   UNIQUE
+  usuario_id        FK → usuarios.id  nullable  ← si reservó con cuenta
   nombre_cliente    VARCHAR(150)
   email_cliente     VARCHAR(200)
   telefono_cliente  VARCHAR(30)   nullable
   estado_pago       ENUM('pendiente', 'aprobado', 'rechazado')
   mp_preference_id  VARCHAR(200)  nullable
   mp_payment_id     VARCHAR(200)  nullable
+  canje_fichas      BOOLEAN       ← True si se usaron fichas en vez de pago
   created_at        TIMESTAMP
   updated_at        TIMESTAMP
+
+fichas
+  id                PK
+  usuario_id        FK → usuarios.id
+  cancha_id         FK → canchas.id
+  fichas_acumuladas INT
+  fichas_canjeadas  INT
+  UNIQUE(usuario_id, cancha_id)
+  → fichas_disponibles = fichas_acumuladas - fichas_canjeadas
 ```
 
 ---
@@ -80,8 +122,8 @@ reservas
 ### 1. Clonar el repo y entrar al directorio
 
 ```bash
-git clone https://github.com/tu-usuario/canchas.git
-cd canchas
+git clone https://github.com/tu-usuario/canchayas.git
+cd canchayas
 ```
 
 ### 2. Crear y activar entorno virtual Python
@@ -101,8 +143,6 @@ venv\Scripts\activate
 
 ```bash
 pip install -r requirements.txt
-# Agregar pydantic-settings si no está en requirements:
-pip install pydantic-settings
 ```
 
 ### 4. Configurar variables de entorno
@@ -111,38 +151,54 @@ pip install pydantic-settings
 cp .env.example .env
 ```
 
-Editá `.env` con tus valores. **Lo mínimo para arrancar localmente:**
+Editá `.env`. Lo mínimo para arrancar localmente:
 
 ```env
-DATABASE_URL=postgresql://usuario:password@localhost:5432/canchas_db
+DATABASE_URL=postgresql://postgres:1234@localhost:5432/canchas_db
 CORS_ORIGINS=http://localhost:5500,http://127.0.0.1:5500
+FRONTEND_URL=http://localhost:5500
+BACKEND_URL=http://localhost:8000
+MP_ACCESS_TOKEN=TEST-xxxxxxxxxxxx   # tu token de prueba de MP
+SECRET_KEY=cualquier-string-largo-para-jwt
 ```
 
-### 5. Crear la base de datos Postgres
-
-Si tenés Postgres instalado localmente:
+### 5. Crear la base de datos PostgreSQL
 
 ```bash
 psql -U postgres
 CREATE DATABASE canchas_db;
-CREATE USER canchas_user WITH PASSWORD 'tu_password';
-GRANT ALL PRIVILEGES ON DATABASE canchas_db TO canchas_user;
 \q
 ```
 
-### 6. Correr el seed (crea tablas y datos iniciales)
+### 6. Correr el seed
+
+Crea las tablas, las 3 canchas, los turnos de los próximos 7 días y los usuarios dueños:
 
 ```bash
-# Desde la raíz del proyecto (no desde /backend)
+# Desde la raíz del proyecto
 python -m backend.seed
 ```
 
 Salida esperada:
+
 ```
 ✅ Tablas creadas (o ya existían)
-✅ 3 canchas insertadas
-✅ 168 turnos generados para los próximos 7 días
-🎉 Seed completado correctamente
+✅ 3 canchas creadas
+✅ 3 dueños creados
+
+  🔑 CREDENCIALES DE DUEÑOS:
+  ┌─────────────────────────────────────────────┐
+  │ La Bombonera  → bombonera@canchayas.com     │
+  │               → contraseña: bombonera123    │
+  │ El Monumental → monumental@canchayas.com    │
+  │               → contraseña: monumental123   │
+  │ Arena Fútbol 7→ arena7@canchayas.com        │
+  │               → contraseña: arena7123       │
+  └─────────────────────────────────────────────┘
+
+✅ 168 turnos generados (próximos 7 días, 9:00–23:00)
+
+🎉 Seed completado.
 ```
 
 ### 7. Iniciar el backend
@@ -153,21 +209,27 @@ uvicorn backend.main:app --reload --port 8000
 ```
 
 La API queda en `http://localhost:8000`  
-Documentación interactiva: `http://localhost:8000/docs`
+Documentación interactiva (Swagger): `http://localhost:8000/docs`
 
-### 8. Servir el frontend
+### 8. Configurar el frontend
 
-Cualquier servidor HTTP estático sirve. Las opciones más simples:
+Editá `frontend/config.js`:
+
+```javascript
+window.API_BASE = "http://127.0.0.1:8000";
+```
+
+### 9. Servir el frontend
 
 ```bash
-# Opción A: extensión Live Server de VS Code
+# Opción A: Live Server de VS Code
 # Click derecho en frontend/index.html → "Open with Live Server"
 
 # Opción B: Python
 cd frontend
 python -m http.server 5500
 
-# Opción C: Node (si tenés npx)
+# Opción C: Node
 cd frontend
 npx serve . -p 5500
 ```
@@ -176,180 +238,184 @@ Abrí `http://localhost:5500` en el navegador.
 
 ---
 
+## 👥 Roles y acceso
+
+| Rol           | Acceso                                                         |
+| ------------- | -------------------------------------------------------------- |
+| **Anónimo**   | Ver turnos disponibles y reservar (sin guardar historial)      |
+| **Comprador** | Todo lo anterior + historial de reservas + fichas de fidelidad |
+| **Dueño**     | Solo el panel de gestión de su cancha (no puede reservar)      |
+
+Los compradores se registran desde la app. Los dueños se crean con el seed y tienen una cuenta por cancha.
+
+---
+
 ## 🔌 Endpoints de la API
 
-| Método | Endpoint                        | Descripción                                  |
-|--------|---------------------------------|----------------------------------------------|
-| GET    | `/`                             | Health check                                 |
-| GET    | `/canchas`                      | Lista canchas activas                        |
-| GET    | `/turnos`                       | Lista turnos disponibles (con filtros)       |
-| GET    | `/turnos/{id}`                  | Detalle de un turno                          |
-| POST   | `/reservas`                     | Crear reserva                                |
-| GET    | `/reservas/{id}`                | Detalle de una reserva                       |
-| POST   | `/reservas/cancelar/{id}`       | Cancelar reserva                             |
-| GET    | `/pagos/link/{reserva_id}`      | Obtener link de checkout de MP               |
-| POST   | `/pagos/mock-confirmar`         | Simular pago aprobado/rechazado              |
-| POST   | `/pagos/webhook`                | IPN de Mercado Pago (producción)             |
+### Autenticación
 
-### Ejemplo: crear una reserva
+| Método | Endpoint         | Descripción                   |
+| ------ | ---------------- | ----------------------------- |
+| POST   | `/auth/registro` | Crear cuenta de comprador     |
+| POST   | `/auth/login`    | Login (devuelve JWT)          |
+| GET    | `/auth/me`       | Datos del usuario autenticado |
 
-```bash
-curl -X POST http://localhost:8000/reservas \
-  -H "Content-Type: application/json" \
-  -d '{
-    "turno_id": 1,
-    "nombre_cliente": "Juan García",
-    "email_cliente": "juan@ejemplo.com",
-    "telefono_cliente": "+54 9 11 1234-5678"
-  }'
-```
+### Canchas y turnos
 
-### Ejemplo: simular pago aprobado
+| Método | Endpoint       | Descripción                                 |
+| ------ | -------------- | ------------------------------------------- |
+| GET    | `/canchas`     | Lista canchas activas                       |
+| GET    | `/turnos`      | Turnos disponibles (filtros: cancha, fecha) |
+| GET    | `/turnos/{id}` | Detalle de un turno                         |
 
-```bash
-curl -X POST http://localhost:8000/pagos/mock-confirmar \
-  -H "Content-Type: application/json" \
-  -d '{"reserva_id": 1, "status": "approved"}'
-```
+### Reservas
 
----
+| Método | Endpoint                          | Descripción                               |
+| ------ | --------------------------------- | ----------------------------------------- |
+| POST   | `/reservas`                       | Crear reserva (estado inicial: pendiente) |
+| GET    | `/reservas/{id}`                  | Detalle de una reserva                    |
+| POST   | `/reservas/cancelar/{id}`         | Cancelar reserva pendiente                |
+| GET    | `/reservas/mis-reservas`          | Historial del usuario logueado            |
+| GET    | `/reservas/mis-fichas`            | Fichas de fidelidad por cancha            |
+| POST   | `/reservas/canjear?turno_id={id}` | Canjear 10 fichas por un turno gratis     |
 
-## 🌐 Deploy en producción
+### Pagos
 
-### Opción A: Render.com (recomendada para este TP)
+| Método | Endpoint                        | Descripción                                         |
+| ------ | ------------------------------- | --------------------------------------------------- |
+| GET    | `/pagos/link/{reserva_id}`      | Genera el checkout URL de Mercado Pago              |
+| GET    | `/pagos/verificar/{reserva_id}` | Consulta activamente el estado del pago en MP       |
+| POST   | `/pagos/mock-confirmar`         | Simula pago aprobado/rechazado (demo local)         |
+| POST   | `/pagos/webhook`                | IPN de Mercado Pago (solo funciona con URL pública) |
 
-**Backend + Base de datos:**
+### Dashboard (solo dueños)
 
-1. Subí el código a GitHub.
-2. En Render: New → Blueprint → apuntá al repo.
-3. Render detecta el `render.yaml` y crea:
-   - Web Service (FastAPI) — free tier
-   - PostgreSQL — free tier (90 días)
-4. Completá las env vars marcadas `sync: false` en el panel.
-5. Una vez desplegado, corré el seed:
-   ```bash
-   # En el panel de Render, abrí el Shell del servicio:
-   python -m backend.seed
-   ```
+| Método | Endpoint                   | Descripción                        |
+| ------ | -------------------------- | ---------------------------------- |
+| GET    | `/dashboard/resumen`       | Estadísticas globales de la cancha |
+| GET    | `/dashboard/turnos-hoy`    | Timeline completo del día          |
+| GET    | `/dashboard/reservas`      | Todas las reservas con filtros     |
+| GET    | `/dashboard/proximos-dias` | Ocupación de los próximos 7 días   |
 
-> ⚠️ El free tier de Render "duerme" el servicio tras 15 minutos de inactividad.
-> La primera request después puede tardar ~30 segundos. Agregá un disclaimer en el frontend.
+### Salud
 
-**Frontend:**
-```bash
-npm i -g vercel
-cd canchas
-vercel --prod
-```
-
-Actualizá `CORS_ORIGINS` en Render con la URL que te da Vercel.
+| Método | Endpoint  | Descripción         |
+| ------ | --------- | ------------------- |
+| GET    | `/`       | Health check        |
+| GET    | `/health` | Estado del servicio |
 
 ---
 
-### Opción B: DigitalOcean (con crédito del GitHub Student Pack)
+## 💳 Mercado Pago — Cómo probarlo localmente
 
-**Backend en App Platform:**
-1. New App → GitHub repo
-2. Elegí el componente Web Service, directorio `backend/`
-3. Build: `pip install -r requirements.txt`
-4. Run: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-5. Agregá un Managed Database (Postgres) desde el mismo App Platform.
-6. DO inyecta `DATABASE_URL` automáticamente si usás el mismo proyecto.
+### Obtener el Access Token
 
-**Frontend en Spaces (CDN):**
-1. Creá un Spaces bucket (compatible S3).
-2. Habilitá "Spaces CDN".
-3. Subí los archivos de `/frontend/`.
-4. Actualizá `API_BASE` en `app.js` con la URL del backend.
+1. Entrá a https://www.mercadopago.com.ar/developers/panel
+2. Tu aplicación → **Credenciales** → **Credenciales de prueba**
+3. Copiá el **Access Token** (empieza con `TEST-`, no el Public Key)
+4. Pegalo en `.env` como `MP_ACCESS_TOKEN`
 
----
+### Por qué el webhook no funciona en local
 
-### Opción C: Docker (cualquier VPS)
+MP necesita una URL pública para enviar las notificaciones. Con `BACKEND_URL=http://localhost:8000` el webhook nunca llega. El sistema lo resuelve con **verificación activa**:
 
-```bash
-# Build
-docker build -t canchas-api .
+1. El usuario paga en la ventana de MP
+2. Vuelve a la app y hace click en **"🔍 Verificar pago"**
+3. El backend consulta directamente a la API de MP usando el `preference_id`
+4. Si el pago fue aprobado, confirma la reserva y bloquea el turno
 
-# Run (con .env)
-docker run -d -p 8000:8000 --env-file backend/.env --name canchas canchas-api
+En producción (con URL pública en DigitalOcean), el webhook funciona automáticamente sin necesidad del botón.
 
-# Seed
-docker exec canchas python -m backend.seed
-```
+### Cuentas y tarjetas de prueba
+
+Creá cuentas de prueba (vendedor y comprador) en el panel de MP. Para pagar usá los datos de la cuenta compradora de prueba y estas tarjetas:
+
+| Tarjeta    | Número                | CVV   | Venc.   | Resultado   |
+| ---------- | --------------------- | ----- | ------- | ----------- |
+| Mastercard | `5031 7557 3453 0604` | `123` | `11/25` | ✅ Aprobado |
+| Visa       | `4509 9535 6623 3704` | `123` | `11/25` | ✅ Aprobado |
 
 ---
 
-## 💳 Configurar Mercado Pago Sandbox
+## 📧 Emails con Resend (opcional)
 
-1. Entrá a https://www.mercadopago.com.ar/developers
-2. Creá una aplicación de prueba.
-3. En "Credenciales de prueba" copiá el **Access Token** (empieza con `TEST-`).
-4. Agregalo en `.env`:
-   ```
-   MP_ACCESS_TOKEN=TEST-xxxxxxxx...
-   ```
-5. En el frontend, el botón "Mercado Pago" abrirá el checkout de sandbox.
-6. Usá las [tarjetas de prueba de MP](https://www.mercadopago.com.ar/developers/es/docs/checkout-pro/integration-test/test-cards).
+Si no se configura, la app funciona igual y el email se loggea en consola.
 
----
-
-## 📧 Configurar emails con Resend
-
-1. Registrate en https://resend.com (gratis, sin tarjeta).
-2. Verificá un dominio o usá el dominio de prueba de Resend.
-3. Creá una API Key.
-4. En `.env`:
-   ```
+1. Registrate en https://resend.com (gratis, sin tarjeta — 3.000 mails/mes)
+2. Creá una API Key y verificá un dominio
+3. En `.env`:
+   ```env
    RESEND_API_KEY=re_xxxxxxxxxxxx
    FROM_EMAIL=reservas@tudominio.com
    ```
 
-Si no configurás Resend, la app funciona igual (el email se loggea en consola).
+---
+
+## 🔒 Manejo de concurrencia en reservas
+
+`POST /reservas` usa `selectinload` + `SELECT FOR UPDATE` de PostgreSQL:
+
+```python
+turno = (
+    db.query(Turno)
+    .options(selectinload(Turno.cancha))   # evita LEFT JOIN (incompatible con FOR UPDATE)
+    .filter(Turno.id == payload.turno_id)
+    .with_for_update()                     # bloquea la fila durante la transacción
+    .first()
+)
+```
+
+Se usa `selectinload` en lugar de `joinedload` porque este último genera un `LEFT OUTER JOIN` que PostgreSQL rechaza al combinarlo con `FOR UPDATE`. El lock previene reservas dobles simultáneas. Como segunda línea de defensa, la constraint `UNIQUE(turno_id)` en la tabla `reservas` rechaza cualquier duplicado a nivel de base de datos.
+
+El turno **no se bloquea visualmente** hasta que el pago sea aprobado. Una reserva en estado `pendiente` no cambia `turno.disponible`; solo lo hace la aprobación del pago.
 
 ---
 
-## 🔒 Manejo de concurrencia
+## 🌐 Deploy en DigitalOcean (recomendado)
 
-El endpoint `POST /reservas` usa `SELECT FOR UPDATE` de PostgreSQL:
+Ver `DEPLOY_DIGITALOCEAN.md` para la guía completa paso a paso.
 
-```python
-turno = db.query(Turno).filter(...).with_for_update().first()
+Resumen rápido con el archivo `.do/app.yaml` incluido:
+
+```bash
+# Instalar doctl
+doctl auth init
+
+# Crear la app (backend + frontend estático + PostgreSQL)
+doctl apps create --spec .do/app.yaml
+
+# Después del primer deploy, correr el seed desde la consola de DO:
+python -m backend.seed
 ```
 
-Esto bloquea la fila del turno durante la transacción. Si dos usuarios intentan
-reservar el mismo turno simultáneamente:
-- El primero adquiere el lock y completa la reserva.
-- El segundo espera, luego lee `disponible=False` y recibe un 409.
+Costos estimados con los $200 de crédito del GitHub Student Pack:
 
-Además, la constraint `UNIQUE(turno_id)` en `reservas` actúa como segunda
-línea de defensa: incluso si dos transacciones llegaran a hacer INSERT al mismo
-tiempo, la DB rechazaría la segunda con un `IntegrityError`.
+| Componente             | Plan         | Costo/mes    |
+| ---------------------- | ------------ | ------------ |
+| Backend (Web Service)  | Basic XXS    | ~$5          |
+| Frontend (Static Site) | Static       | Gratis       |
+| PostgreSQL             | Dev Database | ~$7          |
+| **Total**              |              | **~$12/mes** |
 
 ---
 
 ## 🚀 Mejoras futuras (para el ADR)
 
-- **Autenticación**: agregar JWT con Supabase Auth o Clerk para que los dueños
-  de la cancha gestionen sus propios horarios.
-- **Panel de administración**: CRUD de canchas y generación automática de turnos
-  para semanas futuras (tarea cron).
-- **Múltiples canchas dinámicas**: el modelo ya soporta N canchas; solo falta
-  la UI de administración.
-- **Notificaciones**: recordatorio por email/Telegram N horas antes del turno
-  (DigitalOcean Functions + cron).
-- **Escalado**: mover a una arquitectura con workers separados y una cola de
-  mensajes (Redis + Celery) para operaciones asíncronas.
-- **Cache**: agregar Redis para cachear la lista de turnos disponibles y reducir
-  queries a la DB en horas pico.
+- **Webhook en producción**: con URL pública en DO, el webhook de MP funciona automáticamente y el botón "Verificar" deja de ser necesario.
+- **Renovación automática de turnos**: tarea cron (DigitalOcean Functions) que genera los turnos de la semana siguiente cada domingo.
+- **Notificaciones**: recordatorio por email o Telegram N horas antes del turno.
+- **Cache con Redis**: cachear la lista de turnos disponibles para reducir queries en horas pico.
+- **Escalado**: separar en workers con cola de mensajes (Redis + Celery) para operaciones asíncronas como emails y fichas.
+- **CRUD de canchas**: que cada dueño pueda gestionar sus propios horarios y precios desde el panel.
 
 ---
 
-## 📚 Servicios cloud utilizados (para el ADR)
+## 📚 Servicios cloud utilizados
 
-| Servicio                | Rol                                      | Tier gratuito           |
-|-------------------------|------------------------------------------|-------------------------|
-| Render Web Service      | Hosting del backend FastAPI              | Sí (con sleep)          |
-| Render PostgreSQL       | Base de datos                            | 90 días gratis          |
-| Vercel                  | Hosting del frontend estático            | Sí (ilimitado)          |
-| Mercado Pago Sandbox    | Simulación de pagos                      | Sí                      |
-| Resend                  | Emails transaccionales                   | 3.000 mails/mes         |
+| Servicio                        | Rol                         | Tier gratuito          |
+| ------------------------------- | --------------------------- | ---------------------- |
+| DigitalOcean App Platform       | Hosting del backend FastAPI | Sí (con crédito DO)    |
+| DigitalOcean Managed PostgreSQL | Base de datos               | Sí (con crédito DO)    |
+| DigitalOcean Static Sites       | Hosting del frontend        | Sí                     |
+| Mercado Pago Checkout Pro       | Pagos reales (sandbox)      | Sí                     |
+| Resend                          | Emails transaccionales      | 3.000 mails/mes gratis |
