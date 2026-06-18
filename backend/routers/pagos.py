@@ -65,14 +65,13 @@ def _construir_body_preferencia(
         "statement_descriptor": "CANCHAYAS",
     }
 
-    # back_urls y auto_return solo con URLs públicas (MP rechaza localhost)
-    if not _es_url_local(settings.FRONTEND_URL):
-        body["back_urls"] = {
-            "success": f"{settings.FRONTEND_URL}/pago-exitoso.html?reserva_id={reserva_id}",
-            "failure": f"{settings.FRONTEND_URL}/pago-fallido.html?reserva_id={reserva_id}",
-            "pending": f"{settings.FRONTEND_URL}/index.html?reserva_id={reserva_id}",
-        }
-        body["auto_return"] = "approved"
+    # back_urls siempre — MP sandbox acepta localhost
+    body["back_urls"] = {
+        "success": f"{settings.FRONTEND_URL}/pago-exitoso.html?reserva_id={reserva_id}",
+        "failure": f"{settings.FRONTEND_URL}/pago-fallido.html?reserva_id={reserva_id}",
+        "pending": f"{settings.FRONTEND_URL}/index.html?reserva_id={reserva_id}",
+    }
+    body["auto_return"] = "approved"
 
     # notification_url (webhook) solo con URL pública
     if not _es_url_local(settings.BACKEND_URL):

@@ -39,8 +39,7 @@ def resumen_cancha(
 ):
     """
     Estadísticas globales de la cancha del dueño.
-    Incluye: reservas por estado, ingresos reales (solo aprobadas),
-    ingresos potenciales (pendientes), fichas emitidas.
+    Incluye: reservas por estado, ingresos totales, del día y mensuales.
     """
     logger.info(f"[DASHBOARD] Resumen solicitado por {duenio.email} — cancha {duenio.cancha_id}")
 
@@ -70,14 +69,28 @@ def resumen_cancha(
     ingresos_reales    = len(aprobadas_dinero) * precio
     ingresos_potencial = len(pendientes) * precio
 
-    # Fichas emitidas a clientes en esta cancha
-    fichas_rows = db.query(func.sum(Ficha.fichas_acumuladas)).filter(
-        Ficha.cancha_id == duenio.cancha_id
-    ).scalar()
-    total_fichas = fichas_rows or 0
+    # Ingresos del día
+    hoy = date.today()
+    ingresos_dia = db.query(func.count(Reserva.id)).join(Turno).filter(
+        Turno.cancha_id == duenio.cancha_id,
+        Turno.fecha == hoy,
+        Reserva.estado_pago == EstadoPago.APROBADO,
+        Reserva.canje_fichas == False,
+    ).scalar() or 0
+    ingresos_dia = ingresos_dia * precio
+
+    # Ingresos del mes
+    primer_dia_mes = hoy.replace(day=1)
+    ingresos_mensuales = db.query(func.count(Reserva.id)).join(Turno).filter(
+        Turno.cancha_id == duenio.cancha_id,
+        Turno.fecha >= primer_dia_mes,
+        Turno.fecha <= hoy,
+        Reserva.estado_pago == EstadoPago.APROBADO,
+        Reserva.canje_fichas == False,
+    ).scalar() or 0
+    ingresos_mensuales = ingresos_mensuales * precio
 
     # Turnos libres hoy
-    hoy = date.today()
     libres_hoy = db.query(Turno).filter(
         Turno.cancha_id == duenio.cancha_id,
         Turno.fecha == hoy,
@@ -92,7 +105,8 @@ def resumen_cancha(
         "reservas_pendientes": len(pendientes),
         "ingresos_reales":     ingresos_reales,
         "ingresos_potencial":  ingresos_potencial,
-        "fichas_emitidas":     int(total_fichas),
+        "ingresos_dia":        ingresos_dia,
+        "ingresos_mensuales":  ingresos_mensuales,
         "turnos_libres_hoy":   libres_hoy,
         "precio_hora":         precio,
     }
@@ -105,8 +119,9 @@ def _resumen_vacio(cancha_id: int, nombre: str) -> dict:
         "cancha_id": cancha_id, "cancha_nombre": nombre,
         "reservas_aprobadas": 0, "reservas_canje": 0,
         "reservas_pendientes": 0, "ingresos_reales": 0,
-        "ingresos_potencial": 0, "fichas_emitidas": 0,
-        "turnos_libres_hoy": 0, "precio_hora": 0,
+        "ingresos_potencial": 0, "ingresos_dia": 0,
+        "ingresos_mensuales": 0, "turnos_libres_hoy": 0,
+        "precio_hora": 0,
     }
 
 
@@ -181,19 +196,22 @@ def reservas_cancha(
 
 @router.get("/turnos-hoy")
 def turnos_hoy(
+    fecha: Optional[date] = None,
     duenio: Usuario = Depends(require_duenio),
     db: Session = Depends(get_db),
 ):
     """
-    Timeline completo del día de hoy:
+    Timeline completo del día (por defecto hoy):
     cada turno con su estado, datos del cliente si hay reserva, y tipo de pago.
+    Parámetro opcional `fecha` para navegar entre días.
     """
-    logger.info(f"[DASHBOARD] Turnos hoy — cancha {duenio.cancha_id}")
+    dia = fecha or date.today()
+    logger.info(f"[DASHBOARD] Turnos del día {dia} — cancha {duenio.cancha_id}")
 
     if not duenio.cancha_id:
         raise HTTPException(status_code=400, detail="Sin cancha asignada")
 
-    hoy = date.today()
+    hoy = dia
     turnos = (
         db.query(Turno)
         .options(joinedload(Turno.reserva))

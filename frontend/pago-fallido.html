@@ -21,7 +21,17 @@
     <div class="icon">😞</div>
     <h1>Pago rechazado</h1>
     <p>El pago no pudo procesarse. Tu turno fue liberado y podés intentar reservarlo nuevamente.</p>
-    <a href="index.html">Intentar de nuevo</a>
+    <a href="index.html" id="volver-link">Intentar de nuevo</a>
   </div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const reservaId = params.get("reserva_id");
+    if (reservaId) {
+      document.getElementById("volver-link").href = `index.html?verificar=${reservaId}`;
+    }
+    setTimeout(() => {
+      window.location.href = document.getElementById("volver-link").href;
+    }, 3000);
+  </script>
 </body>
 </html>

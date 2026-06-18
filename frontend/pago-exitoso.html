@@ -35,16 +35,20 @@
     <div class="icon">🎉</div>
     <h1>¡Pago exitoso!</h1>
     <p>Tu reserva está confirmada y el pago fue aprobado por Mercado Pago.<br>Revisá tu email para los detalles.</p>
-    <a href="index.html">Volver al inicio</a>
+    <a href="index.html" id="volver-link">Volver al inicio</a>
   </div>
   <script>
-    // Obtener reserva_id de la URL (para mostrar info adicional si se desea)
     const params = new URLSearchParams(window.location.search);
     const reservaId = params.get("reserva_id");
     if (reservaId) {
       document.querySelector("p").innerHTML +=
         `<br><small style="color:#22c55e">Reserva #${reservaId}</small>`;
+      document.getElementById("volver-link").href = `index.html?verificar=${reservaId}`;
     }
+    // Redirigir automáticamente después de 3 segundos
+    setTimeout(() => {
+      window.location.href = document.getElementById("volver-link").href;
+    }, 3000);
   </script>
 </body>
 </html>

@@ -320,14 +320,28 @@ def detalle_reserva(reserva_id: int, db: Session = Depends(get_db)):
 # ── POST /reservas/cancelar/{id} ──────────────────────────────────────────
 
 @router.post("/cancelar/{reserva_id}", response_model=MessageResponse)
-def cancelar_reserva(reserva_id: int, db: Session = Depends(get_db)):
+def cancelar_reserva(
+    reserva_id: int,
+    db: Session = Depends(get_db),
+    usuario_actual: Optional[Usuario] = Depends(get_usuario_actual),
+):
     """
     Cancela una reserva PENDIENTE y la elimina.
     El turno queda disponible para nuevas reservas.
     No se puede cancelar si el pago ya fue aprobado.
+
+    Autorización:
+      - Dueño de la cancha puede cancelar cualquier reserva pendiente de su cancha
+      - Comprador puede cancelar sus propias reservas pendientes
+      - Usuarios anónimos también pueden cancelar (por URL directa)
     """
     logger.info(f"[RESERVA] Cancelando reserva {reserva_id}")
-    reserva = db.query(Reserva).filter(Reserva.id == reserva_id).first()
+    reserva = (
+        db.query(Reserva)
+        .options(joinedload(Reserva.turno).joinedload(Turno.cancha))
+        .filter(Reserva.id == reserva_id)
+        .first()
+    )
     if not reserva:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
 
@@ -337,9 +351,24 @@ def cancelar_reserva(reserva_id: int, db: Session = Depends(get_db)):
             detail="No se puede cancelar una reserva con pago aprobado."
         )
 
+    # Verificar autorización
+    if usuario_actual:
+        if usuario_actual.rol == RolUsuario.DUENIO:
+            if reserva.turno.cancha_id != usuario_actual.cancha_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="No podés cancelar reservas de canchas que no te pertenecen."
+                )
+        elif usuario_actual.rol == RolUsuario.COMPRADOR:
+            if reserva.usuario_id != usuario_actual.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="No podés cancelar una reserva que no te pertenece."
+                )
+
     turno = db.query(Turno).filter(Turno.id == reserva.turno_id).first()
     if turno:
-        turno.disponible = True  # por si acaso estaba en False
+        turno.disponible = True
         logger.info(f"[RESERVA] Turno {turno.id} liberado")
 
     db.delete(reserva)

@@ -77,6 +77,32 @@ document.addEventListener("DOMContentLoaded", async () => {
     await cargarTurnos();
   }
 
+  // ── Manejar redirección desde MP (pago-exitoso.html o pago-fallido.html) ──
+  const urlParams = new URLSearchParams(window.location.search);
+  const verificarId = urlParams.get("verificar");
+  if (verificarId) {
+    console.log(`[INIT] Detectada redirección de MP para reserva #${verificarId}`);
+    // Esperar un poco a que todo cargue, luego intentar verificar
+    setTimeout(async () => {
+      try {
+        const data = await apiFetch(`/pagos/verificar/${verificarId}`);
+        if (data.estado_pago === "aprobado") {
+          mostrarToast("✅ ¡Pago confirmado! El turno está reservado.", "success");
+          if (!esDuenio()) { cargarTurnos(); cargarHistorial(); cargarFichas(); }
+        } else if (data.estado_pago === "rechazado") {
+          mostrarToast("❌ El pago fue rechazado. El turno quedó libre.", "error");
+          if (!esDuenio()) cargarTurnos();
+        } else {
+          mostrarToast(`Pago en estado: ${data.estado_pago}. Verificá manualmente.`, "info");
+        }
+      } catch (e) {
+        console.warn("[INIT] Error verificando pago post-redirección:", e.message);
+      }
+      // Limpiar URL
+      window.history.replaceState({}, "", window.location.pathname);
+    }, 1000);
+  }
+
   console.log("[INIT] ✅ Listo");
 });
 
@@ -457,10 +483,20 @@ async function cargarHistorial() {
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
           <span class="estado-badge estado-${r.estado_pago}">${formatEstado(r.estado_pago)}</span>
           ${r.estado_pago === 'pendiente' ? `
-            <button class="btn-verificar" style="font-size:.8rem;padding:7px 12px"
-              onclick="verificarPagoDesdeHistorial(${r.id}, this)">
-              🔍 Verificar pago
-            </button>` : ''}
+            <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
+              <button class="btn-verificar" style="font-size:.8rem;padding:7px 12px"
+                onclick="pagarReservaDesdeHistorial(${r.id}, this)">
+                💳 Pagar
+              </button>
+              <button class="btn-verificar" style="font-size:.8rem;padding:7px 12px;background:var(--red);color:#fff;border:1px solid var(--red)"
+                onclick="cancelarReservaHistorial(${r.id}, this)">
+                ✕ Cancelar
+              </button>
+              <button class="btn-verificar" style="font-size:.8rem;padding:7px 12px"
+                onclick="verificarPagoDesdeHistorial(${r.id}, this)">
+                🔍 Verificar
+              </button>
+            </div>` : ''}
         </div>
       </div>`).join("")}</div>`;
   } catch (e) {
@@ -495,6 +531,61 @@ async function verificarPagoDesdeHistorial(reservaId, btn) {
     btn.disabled    = false;
     btn.textContent = "🔍 Verificar pago";
   }
+}
+
+// ── Pagar desde Historial ────────────────────────────────────────────────
+async function pagarReservaDesdeHistorial(reservaId, btn) {
+  console.log(`[HISTORIAL] Generando link de pago reserva #${reservaId}`);
+  btn.disabled    = true;
+  btn.textContent = "Generando link...";
+  try {
+    const data = await apiFetch(`/pagos/link/${reservaId}`);
+    if (data.modo === "simulacion") {
+      mostrarToast("Token MP no configurado. Usá 'Simular pago' desde la reserva.", "error");
+      btn.disabled    = false;
+      btn.textContent = "💳 Pagar";
+      return;
+    }
+    if (!data.checkout_url) {
+      throw new Error("No se recibió URL de checkout");
+    }
+    window.open(data.checkout_url, "_blank");
+    mostrarToast("Checkout abierto. Después de pagar, clickeá 'Verificar'.", "info");
+    btn.textContent = "💳 Pagar (abierto)";
+    btn.disabled    = false;
+  } catch (e) {
+    console.error("[HISTORIAL-PAGAR] Error:", e.message);
+    mostrarToast(e.message, "error");
+    btn.disabled    = false;
+    btn.textContent = "💳 Pagar";
+  }
+}
+
+// ── Cancelar reserva (genérico, usado desde historial y dashboard) ──────
+async function _cancelarReserva(reservaId, btn, recargarFn) {
+  if (!confirm("¿Estás seguro de cancelar esta reserva? El turno quedará libre.")) return;
+  console.log(`[CANCELAR] Cancelando reserva #${reservaId}`);
+  const original = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = "Cancelando...";
+  try {
+    await apiFetch(`/reservas/cancelar/${reservaId}`, { method: "POST" });
+    mostrarToast(`✅ Reserva #${reservaId} cancelada. Turno liberado.`, "success");
+    if (recargarFn) recargarFn();
+  } catch (e) {
+    console.error("[CANCELAR] Error:", e.message);
+    mostrarToast(e.message, "error");
+    btn.disabled    = false;
+    btn.textContent = original;
+  }
+}
+
+function cancelarReservaHistorial(reservaId, btn) {
+  _cancelarReserva(reservaId, btn, () => { cargarHistorial(); cargarTurnos(); });
+}
+
+function cancelarReservaDashboard(reservaId, btn) {
+  _cancelarReserva(reservaId, btn, () => { cargarDashboard(); cargarPendientes(); });
 }
 
 // ── Fichas ────────────────────────────────────────────────────────────────
@@ -606,9 +697,12 @@ async function cargarDashboard() {
   console.log("[DASHBOARD] Cargando...");
 
   try {
+    const fecha = document.getElementById("dashboard-fecha").value;
+    const params = fecha ? `?fecha=${fecha}` : "";
+
     const [resumen, hoyData] = await Promise.all([
       apiFetch("/dashboard/resumen"),
-      apiFetch("/dashboard/turnos-hoy"),
+      apiFetch(`/dashboard/turnos-hoy${params}`),
     ]);
 
     // Actualizar nombre de cancha
@@ -621,7 +715,10 @@ async function cargarDashboard() {
     document.getElementById("stat-canjes").textContent     = resumen.reservas_canje;
     document.getElementById("stat-ingresos").textContent   =
       "$" + Number(resumen.ingresos_reales).toLocaleString("es-AR");
-    document.getElementById("stat-fichas").textContent     = resumen.fichas_emitidas;
+    document.getElementById("stat-ingresos-dia").textContent =
+      "$" + Number(resumen.ingresos_dia).toLocaleString("es-AR");
+    document.getElementById("stat-ingresos-mensuales").textContent =
+      "$" + Number(resumen.ingresos_mensuales).toLocaleString("es-AR");
     document.getElementById("stat-libres-hoy").textContent = resumen.turnos_libres_hoy;
 
     // Tabla Hoy
@@ -651,10 +748,16 @@ function renderizarTablaHoy(hoyData) {
       : `<span class="estado-badge estado-${t.estado_pago}">${formatEstado(t.estado_pago)}</span>`;
 
     const acciones = t.reserva_id && t.estado_pago === "pendiente" ? `
-      <button class="btn-verificar" style="font-size:.78rem;padding:6px 10px"
-        onclick="verificarPagoDashboard(${t.reserva_id}, this)">
-        🔍 Verificar
-      </button>` : "—";
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn-verificar" style="font-size:.78rem;padding:6px 10px"
+          onclick="verificarPagoDashboard(${t.reserva_id}, this)">
+          🔍 Verificar
+        </button>
+        <button class="btn-verificar" style="font-size:.78rem;padding:6px 10px;background:var(--red);color:#fff;border:1px solid var(--red)"
+          onclick="cancelarReservaDashboard(${t.reserva_id}, this)">
+          ✕ Cancelar
+        </button>
+      </div>` : "—";
 
     return `<tr class="${rowClass}">
       <td><strong>${t.hora_inicio} – ${t.hora_fin}</strong></td>
@@ -781,10 +884,16 @@ async function cargarPendientes() {
           <div class="pendiente-detalle">📅 ${r.fecha} · ${r.tipo_pago === 'canje' ? '⭐ Canje' : '💳 MP'}</div>
           <div class="pendiente-reserva-id">Reserva #${r.reserva_id} — creada ${r.reservado_el}</div>
         </div>
-        <button class="btn-verificar" id="btn-ver-${r.reserva_id}"
-          onclick="verificarPagoDashboard(${r.reserva_id}, this)">
-          🔍 Verificar pago
-        </button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn-verificar" id="btn-ver-${r.reserva_id}"
+            onclick="verificarPagoDashboard(${r.reserva_id}, this)">
+            🔍 Verificar pago
+          </button>
+          <button class="btn-verificar" style="background:var(--red);color:#fff;border:1px solid var(--red)"
+            onclick="cancelarReservaDashboard(${r.reserva_id}, this)">
+            ✕ Cancelar
+          </button>
+        </div>
       </div>`).join("");
   } catch (e) {
     console.error("[DASHBOARD] Error pendientes:", e.message);
