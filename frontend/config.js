@@ -10,7 +10,7 @@
 
 // PRODUCCIÓN — Reemplazar con la URL del backend hosteado (Render, DO, Railway, etc.):
 //window.API_BASE = "https://REEMPLAZAR_CON_URL_DEL_BACKEND";
-window.API_BASE = "https://https://bitter-surf-d556.lucascapocasa1.workers.dev/";
+window.API_BASE = "https://canchas-api-fy23.onrender.com";
 
 // Ejemplos:
 // window.API_BASE = "https://canchayas-backend-abc12.ondigitalocean.app";
