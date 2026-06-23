@@ -1,11 +1,9 @@
 services:
   - type: web
     name: canchas-api
-    runtime: python
+    runtime: docker
     region: oregon
     plan: free
-    buildCommand: pip install --upgrade pip && pip install --prefer-binary -r backend/requirements.txt
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
         fromDatabase:
