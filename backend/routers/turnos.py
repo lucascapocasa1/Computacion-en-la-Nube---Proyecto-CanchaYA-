@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import exists, and_, or_
 
 from ..db.database import get_db
-from ..models.models import Cancha, Turno, Reserva, EstadoPago
+from ..models.models import Cancha, Turno, Reserva, EstadoPago, Descuento
 from ..schemas.schemas import CanchaResponse, TurnoResponse
 
 router = APIRouter(tags=["canchas y turnos"])
@@ -86,7 +86,34 @@ def listar_turnos(
         )
 
     turnos = query.order_by(Turno.fecha, Turno.hora_inicio).all()
-    return turnos
+
+    # Agregar info de descuento a cada turno
+    resultado = []
+    for t in turnos:
+        descuento_activo = (
+            db.query(Descuento)
+            .filter(
+                Descuento.cancha_id == t.cancha_id,
+                Descuento.activo == True,
+                Descuento.hora_desde <= t.hora_inicio,
+                Descuento.hora_hasta >= t.hora_inicio,
+            )
+            .first()
+        )
+        dct = t.__dict__.copy()
+        precio_original = float(t.cancha.precio_hora)
+        dct["precio_original"] = precio_original
+        dct["precio_descuento"] = None
+        dct["descuento_porcentaje"] = None
+
+        if descuento_activo:
+            pct = descuento_activo.porcentaje
+            dct["precio_descuento"] = round(precio_original * (1 - pct / 100), 2)
+            dct["descuento_porcentaje"] = pct
+
+        resultado.append(TurnoResponse.model_validate(dct))
+
+    return resultado
 
 
 # ---------------------------------------------------------------------------
@@ -103,4 +130,26 @@ def detalle_turno(turno_id: int, db: Session = Depends(get_db)):
     )
     if not turno:
         raise HTTPException(status_code=404, detail="Turno no encontrado")
-    return turno
+
+    descuento_activo = (
+        db.query(Descuento)
+        .filter(
+            Descuento.cancha_id == turno.cancha_id,
+            Descuento.activo == True,
+            Descuento.hora_desde <= turno.hora_inicio,
+            Descuento.hora_hasta >= turno.hora_inicio,
+        )
+        .first()
+    )
+    dct = turno.__dict__.copy()
+    precio_original = float(turno.cancha.precio_hora)
+    dct["precio_original"] = precio_original
+    dct["precio_descuento"] = None
+    dct["descuento_porcentaje"] = None
+
+    if descuento_activo:
+        pct = descuento_activo.porcentaje
+        dct["precio_descuento"] = round(precio_original * (1 - pct / 100), 2)
+        dct["descuento_porcentaje"] = pct
+
+    return TurnoResponse.model_validate(dct)

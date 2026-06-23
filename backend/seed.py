@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
+from sqlalchemy import text
 from backend.db.database import engine, SessionLocal, Base
 import backend.models.models  # registra todos los modelos en Base
 from backend.models.models import Cancha, Turno, TipoCancha, Usuario, RolUsuario
@@ -25,6 +26,23 @@ from backend.core.security import hash_password
 
 def crear_tablas():
     Base.metadata.create_all(bind=engine)
+
+    # Migración: agregar columnas nuevas si no existen
+    with engine.connect() as conn:
+        conn.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE reservas ADD COLUMN IF NOT EXISTS tipo_pago VARCHAR(20) NOT NULL DEFAULT 'completo';
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+        """))
+        conn.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE reservas ADD COLUMN IF NOT EXISTS monto_pagado NUMERIC(10, 2);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+        """))
+        conn.commit()
+
     print("✅ Tablas creadas (o ya existían)")
 
 

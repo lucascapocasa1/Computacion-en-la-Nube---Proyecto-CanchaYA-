@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .core.config import settings
-from .routers import turnos_router, reservas_router, pagos_router, auth_router, dashboard_router
+from .routers import turnos_router, reservas_router, pagos_router, auth_router, dashboard_router, canchas_router, descuentos_router
 
 # Logging: muestra todos los prints de [DEBUG], [INFO], etc.
 logging.basicConfig(
@@ -39,6 +39,8 @@ app.include_router(turnos_router)
 app.include_router(reservas_router)
 app.include_router(pagos_router)
 app.include_router(dashboard_router)
+app.include_router(canchas_router)
+app.include_router(descuentos_router)
 
 @app.get("/", tags=["health"])
 def health_check():

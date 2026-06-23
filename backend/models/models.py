@@ -16,6 +16,7 @@ CAMBIO CLAVE vs versión anterior:
 """
 
 from datetime import datetime, date, time
+from decimal import Decimal
 from sqlalchemy import (
     Integer, String, Boolean, Numeric,
     ForeignKey, DateTime, Date, Time,
@@ -37,6 +38,11 @@ class EstadoPago(str, enum.Enum):
     PENDIENTE = "pendiente"   # reserva creada, pago no iniciado o en proceso
     APROBADO  = "aprobado"    # pago confirmado por MP o mock → turno bloqueado
     RECHAZADO = "rechazado"   # pago rechazado/cancelado → turno vuelve a estar libre
+
+
+class TipoPago(str, enum.Enum):
+    COMPLETO = "completo"     # pago del 100% del valor
+    SENIA    = "senia"        # pago del 50% (seña)
 
 
 class RolUsuario(str, enum.Enum):
@@ -145,6 +151,13 @@ class Reserva(Base):
     # True si el turno fue canjeado con fichas (no pagó con dinero)
     canje_fichas: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Tipo de pago: completo (100%) o seña (50%)
+    tipo_pago: Mapped[TipoPago] = mapped_column(
+        SAEnum(TipoPago), default=TipoPago.COMPLETO, nullable=False
+    )
+    # Monto efectivamente pagado (se guarda para referencia)
+    monto_pagado: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -195,4 +208,29 @@ class Ficha(Base):
         return (
             f"<Ficha user={self.usuario_id} cancha={self.cancha_id} "
             f"acum={self.fichas_acumuladas} canjeadas={self.fichas_canjeadas}>"
+        )
+
+
+# ── Descuento ─────────────────────────────────────────────────────
+
+class Descuento(Base):
+    """
+    Descuentos por franja horaria que el dueño puede configurar.
+    Ej: lunes a viernes de 14:00 a 18:00 hay 15% de descuento.
+    """
+    __tablename__ = "descuentos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    cancha_id: Mapped[int] = mapped_column(Integer, ForeignKey("canchas.id"), nullable=False)
+    hora_desde: Mapped[time] = mapped_column(Time, nullable=False)
+    hora_hasta: Mapped[time] = mapped_column(Time, nullable=False)
+    porcentaje: Mapped[int] = mapped_column(Integer, nullable=False)  # ej: 10, 15, 20
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    cancha: Mapped["Cancha"] = relationship("Cancha")
+
+    def __repr__(self):
+        return (
+            f"<Descuento cancha={self.cancha_id} "
+            f"{self.hora_desde}-{self.hora_hasta} {self.porcentaje}%>"
         )

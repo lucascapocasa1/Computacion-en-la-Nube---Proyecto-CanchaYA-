@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session, joinedload
 
 from ..db.database import get_db
-from ..models.models import Reserva, Turno, EstadoPago
+from ..models.models import Reserva, Turno, EstadoPago, TipoPago, Descuento
 from ..schemas.schemas import PagoConfirmacion, ReservaResponse
 from ..core.config import settings
 from .reservas import _sumar_ficha
@@ -48,17 +48,26 @@ def _headers_mp() -> dict:
 
 
 def _construir_body_preferencia(
-    reserva_id: int, turno, nombre_cliente: str, email_cliente: str
+    reserva_id: int, turno, nombre_cliente: str, email_cliente: str,
+    tipo_pago: TipoPago = TipoPago.COMPLETO,
+    precio_base: float = None,
 ) -> dict:
     """Arma el body de la preferencia de MP adaptado al entorno."""
+    precio = precio_base if precio_base else float(turno.cancha.precio_hora)
+    unit_price = precio
+    title_suffix = ""
+    if tipo_pago == TipoPago.SENIA:
+        unit_price = round(precio * 0.5, 2)
+        title_suffix = " (seña 50%)"
+
     body: dict = {
         "items": [{
             "id": str(turno.id),
-            "title": f"{turno.cancha.nombre} · {turno.fecha} {str(turno.hora_inicio)[:5]}",
+            "title": f"{turno.cancha.nombre} · {turno.fecha} {str(turno.hora_inicio)[:5]}{title_suffix}",
             "description": f"Cancha {turno.cancha.tipo.replace('_', ' ')} – 1 hora",
             "quantity": 1,
             "currency_id": "ARS",
-            "unit_price": float(turno.cancha.precio_hora),
+            "unit_price": unit_price,
         }],
         "payer": {"name": nombre_cliente, "email": email_cliente},
         "external_reference": str(reserva_id),
@@ -101,6 +110,24 @@ def _aprobar_reserva(db: Session, reserva: Reserva, payment_id: str = None):
     else:
         logger.error(f"[PAGO] ⚠️ Turno {reserva.turno_id} no encontrado al aprobar!")
         return
+
+    # Calcular monto pagado según tipo de pago y descuentos
+    if turno and reserva.monto_pagado is None:
+        precio = float(turno.cancha.precio_hora)
+        # Verificar descuento activo
+        descuento = db.query(Descuento).filter(
+            Descuento.cancha_id == turno.cancha_id,
+            Descuento.activo == True,
+            Descuento.hora_desde <= turno.hora_inicio,
+            Descuento.hora_hasta >= turno.hora_inicio,
+        ).first()
+        if descuento:
+            precio = round(precio * (1 - descuento.porcentaje / 100), 2)
+
+        if reserva.tipo_pago == TipoPago.SENIA:
+            reserva.monto_pagado = round(precio * 0.5, 2)
+        else:
+            reserva.monto_pagado = precio
 
     if reserva.usuario_id and not reserva.canje_fichas and turno:
         _sumar_ficha(db, reserva.usuario_id, turno.cancha_id)
@@ -208,12 +235,23 @@ def _buscar_pago_por_reserva(reserva_id: int) -> dict | None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/link/{reserva_id}")
-def obtener_link_pago(reserva_id: int, db: Session = Depends(get_db)):
+def obtener_link_pago(
+    reserva_id: int,
+    tipo_pago: str = "completo",
+    db: Session = Depends(get_db),
+):
     """
     Crea (o reutiliza) la preferencia MP y devuelve el checkout URL.
+    tipo_pago: 'completo' (100%) o 'senia' (50%).
     Modo simulacion si no hay token configurado.
     """
-    logger.info(f"[MP] Solicitando link de pago para reserva {reserva_id}")
+    logger.info(f"[MP] Solicitando link de pago para reserva {reserva_id} tipo={tipo_pago}")
+
+    # Validar tipo_pago
+    try:
+        tp = TipoPago(tipo_pago)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="tipo_pago debe ser 'completo' o 'senia'")
 
     reserva = (
         db.query(Reserva)
@@ -227,13 +265,35 @@ def obtener_link_pago(reserva_id: int, db: Session = Depends(get_db)):
     if reserva.estado_pago == EstadoPago.APROBADO:
         raise HTTPException(status_code=400, detail="Esta reserva ya está pagada")
 
+    # Guardar tipo de pago en la reserva
+    if reserva.tipo_pago != tp:
+        reserva.tipo_pago = tp
+        db.commit()
+
+    turno = reserva.turno
+
+    # Calcular precio base (con descuento si aplica)
+    descuento_activo = (
+        db.query(Descuento)
+        .filter(
+            Descuento.cancha_id == turno.cancha_id,
+            Descuento.activo == True,
+            Descuento.hora_desde <= turno.hora_inicio,
+            Descuento.hora_hasta >= turno.hora_inicio,
+        )
+        .first()
+    )
+    precio_base = float(turno.cancha.precio_hora)
+    if descuento_activo:
+        precio_base = round(precio_base * (1 - descuento_activo.porcentaje / 100), 2)
+
     token = settings.MP_ACCESS_TOKEN or ""
     if not token or "fake" in token:
         logger.info("[MP] Sin token real → modo simulacion")
+        monto = round(precio_base * 0.5, 2) if tp == TipoPago.SENIA else precio_base
         return {"checkout_url": None, "preference_id": "mock", "modo": "simulacion",
-                "mensaje": "Token MP no configurado. Usá 'Simular pago'."}
-
-    turno = reserva.turno
+                "mensaje": "Token MP no configurado. Usá 'Simular pago'.",
+                "monto": monto, "tipo_pago": tp.value}
 
     # Reutilizar preferencia si existe
     if reserva.mp_preference_id and not reserva.mp_preference_id.startswith("mock"):
@@ -247,18 +307,21 @@ def obtener_link_pago(reserva_id: int, db: Session = Depends(get_db)):
                 resp.raise_for_status()
                 data = resp.json()
             url = data.get("sandbox_init_point") or data.get("init_point")
+            monto = round(precio_base * 0.5, 2) if tp == TipoPago.SENIA else precio_base
             return {
                 "checkout_url": url,
                 "preference_id": reserva.mp_preference_id,
                 "modo": "sandbox",
                 "nota": "Después de pagar, volvé y hacé click en 'Verificar pago' para confirmar.",
+                "monto": monto,
+                "tipo_pago": tp.value,
             }
         except Exception as e:
             logger.warning(f"[MP] Error reutilizando preferencia: {e} — creando nueva")
 
     # Crear nueva preferencia
     body = _construir_body_preferencia(
-        reserva_id, turno, reserva.nombre_cliente, reserva.email_cliente
+        reserva_id, turno, reserva.nombre_cliente, reserva.email_cliente, tp, precio_base
     )
     logger.debug(f"[MP] Body preferencia: {body}")
 
@@ -290,6 +353,8 @@ def obtener_link_pago(reserva_id: int, db: Session = Depends(get_db)):
             "preference_id": pref["id"],
             "modo": "sandbox",
             "nota": "Después de pagar, volvé y hacé click en 'Verificar pago' para confirmar.",
+            "monto": body["items"][0]["unit_price"],
+            "tipo_pago": tp.value,
         }
 
     except HTTPException:

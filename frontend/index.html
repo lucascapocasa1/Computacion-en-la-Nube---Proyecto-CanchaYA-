@@ -115,6 +115,7 @@
         <button class="tab"        data-dtab="reservas" onclick="mostrarTabDashboard(this)">📋 Todas las reservas</button>
         <button class="tab"        data-dtab="semana"   onclick="mostrarTabDashboard(this)">📆 Próximos días</button>
         <button class="tab"        data-dtab="pendientes" onclick="mostrarTabDashboard(this)">⏳ Pendientes</button>
+        <button class="tab"        data-dtab="descuentos" onclick="mostrarTabDashboard(this)">🏷️ Descuentos</button>
       </div>
 
       <!-- Tab: Hoy -->
@@ -181,6 +182,19 @@
           <strong style="color:var(--green)">Verificar pago</strong> para consultar el estado en Mercado Pago.
         </p>
         <div id="lista-pendientes"></div>
+      </div>
+
+      <!-- Tab: Descuentos -->
+      <div class="dtab" id="dtab-descuentos">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+          <div class="section-title" style="margin-bottom:0">🏷️ Descuentos por franja horaria</div>
+          <button class="btn-nav" onclick="abrirModalDescuento()">+ Nuevo descuento</button>
+        </div>
+        <p style="color:var(--muted);font-size:.85rem;margin-bottom:16px">
+          Los descuentos se aplican automáticamente a todos los turnos dentro de la franja horaria seleccionada.
+          El precio original se muestra tachado y el precio con descuento resaltado.
+        </p>
+        <div id="descuentos-lista"></div>
       </div>
 
     </div><!-- /vista-duenio -->
@@ -250,22 +264,44 @@
       <button class="modal-close" onclick="cerrarModalPago()">✕</button>
       <h2>Pagar reserva</h2>
       <p class="modal-subtitle" id="pago-subtitle">Elegí cómo querés pagar</p>
+
+      <div id="pago-tipo-info" style="display:none;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
+        <p style="font-size:.85rem;color:var(--muted)">Tipo de pago seleccionado: <strong id="pago-tipo-label" style="color:var(--text)">—</strong></p>
+      </div>
+
       <div class="pago-options">
-        <button class="pago-btn" onclick="pagarConMP()">
+        <p style="font-size:.82rem;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:1px">💳 Mercado Pago</p>
+        <button class="pago-btn" id="pago-btn-mp-total" onclick="pagarConMP('completo')">
           <span class="pago-icon">💳</span>
           <span>
-            <span class="pago-title">Mercado Pago</span>
-            <span class="pago-desc">Tarjeta, débito o efectivo (sandbox)</span>
+            <span class="pago-title">Pagar total</span>
+            <span class="pago-desc">Tarjeta, débito o efectivo — 100% del valor</span>
           </span>
         </button>
-        <button class="pago-btn" onclick="pagarMock('approved')">
+        <button class="pago-btn" id="pago-btn-mp-senia" onclick="pagarConMP('senia')">
+          <span class="pago-icon">🔶</span>
+          <span>
+            <span class="pago-title">Pagar con seña (50%)</span>
+            <span class="pago-desc">Pagá la mitad ahora y asegurá tu turno</span>
+          </span>
+        </button>
+
+        <p style="font-size:.82rem;color:var(--muted);margin:12px 0 6px;font-weight:600;text-transform:uppercase;letter-spacing:1px">🎮 Simulación</p>
+        <button class="pago-btn" id="pago-btn-total" onclick="pagarMock('approved', 'completo')">
           <span class="pago-icon">✅</span>
           <span>
-            <span class="pago-title">Simular pago aprobado</span>
-            <span class="pago-desc">Demo: confirmar sin pasarela de pago</span>
+            <span class="pago-title">Simular pago total aprobado</span>
+            <span class="pago-desc">Demo: confirmar pago completo</span>
           </span>
         </button>
-        <button class="pago-btn" onclick="pagarMock('rejected')">
+        <button class="pago-btn" id="pago-btn-senia" onclick="pagarMock('approved', 'senia')">
+          <span class="pago-icon">🔶</span>
+          <span>
+            <span class="pago-title">Simular pago con seña (50%)</span>
+            <span class="pago-desc">Demo: confirmar seña del 50%</span>
+          </span>
+        </button>
+        <button class="pago-btn" id="pago-simular-rechazado" onclick="pagarMock('rejected')">
           <span class="pago-icon">❌</span>
           <span>
             <span class="pago-title">Simular pago rechazado</span>
@@ -299,6 +335,48 @@
         <p style="color:var(--muted);text-align:center;padding:20px">Seleccioná una fecha</p>
       </div>
       <button class="btn btn-secondary" style="margin-top:14px" onclick="document.getElementById('modal-canje').classList.remove('open')">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Modal: Editar precio (dueño) -->
+  <div class="modal-overlay" id="modal-precio">
+    <div class="modal">
+      <button class="modal-close" onclick="cerrarModalPrecio()">✕</button>
+      <h2>✏️ Editar precio</h2>
+      <p class="modal-subtitle">Modificá el precio por hora de tu cancha</p>
+      <div class="form-group">
+        <label>Precio por hora ($ARS)</label>
+        <input type="number" id="precio-input" placeholder="Ej: 8000" min="1000" step="100" />
+      </div>
+      <button class="btn btn-primary" id="btn-guardar-precio" onclick="guardarPrecio()">Guardar</button>
+      <button class="btn btn-secondary" onclick="cerrarModalPrecio()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Modal: Crear descuento (dueño) -->
+  <div class="modal-overlay" id="modal-descuento">
+    <div class="modal">
+      <button class="modal-close" onclick="cerrarModalDescuento()">✕</button>
+      <h2>🏷️ Nuevo descuento</h2>
+      <p class="modal-subtitle">Configurá una franja horaria con descuento</p>
+      <div class="form-group">
+        <label>Hora desde</label>
+        <input type="time" id="descuento-hora-desde" />
+      </div>
+      <div class="form-group">
+        <label>Hora hasta</label>
+        <input type="time" id="descuento-hora-hasta" />
+      </div>
+      <div class="form-group">
+        <label>Porcentaje de descuento</label>
+        <select id="descuento-porcentaje">
+          <option value="10">10%</option>
+          <option value="15">15%</option>
+          <option value="20">20%</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btn-guardar-descuento" onclick="guardarDescuento()">Crear descuento</button>
+      <button class="btn btn-secondary" onclick="cerrarModalDescuento()">Cancelar</button>
     </div>
   </div>
 

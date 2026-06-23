@@ -170,6 +170,9 @@ def reservas_cancha(
 
     resultado = []
     for r in reservas:
+        tipo_pago_str = "canje" if r.canje_fichas else "mercadopago"
+        if r.tipo_pago.value == "senia" and not r.canje_fichas:
+            tipo_pago_str = "senia"
         resultado.append({
             "reserva_id":   r.id,
             # Datos del cliente
@@ -182,7 +185,8 @@ def reservas_cancha(
             "hora_fin":     str(r.turno.hora_fin)[:5],
             # Pago
             "estado_pago":  r.estado_pago.value,
-            "tipo_pago":    "canje" if r.canje_fichas else "mercadopago",
+            "tipo_pago":    tipo_pago_str,
+            "monto_pagado": float(r.monto_pagado) if r.monto_pagado else None,
             "mp_payment_id": r.mp_payment_id or "—",
             # Metadata
             "reservado_el": r.created_at.strftime("%d/%m/%Y %H:%M"),
@@ -238,6 +242,9 @@ def turnos_hoy(
             })
         else:
             r = t.reserva
+            tipo_pago_str = "canje" if r.canje_fichas else "mercadopago"
+            if r.tipo_pago.value == "senia" and not r.canje_fichas:
+                tipo_pago_str = "senia"
             resultado.append({
                 "turno_id":    t.id,
                 "hora_inicio": str(t.hora_inicio)[:5],
@@ -247,7 +254,8 @@ def turnos_hoy(
                 "email":       r.email_cliente,
                 "telefono":    r.telefono_cliente or "—",
                 "estado_pago": r.estado_pago.value,
-                "tipo_pago":   "canje" if r.canje_fichas else "mercadopago",
+                "tipo_pago":   tipo_pago_str,
+                "monto_pagado": float(r.monto_pagado) if r.monto_pagado else None,
                 "reserva_id":  r.id,
                 "mp_payment_id": r.mp_payment_id or "—",
             })

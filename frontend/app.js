@@ -168,6 +168,7 @@ function mostrarTabDashboard(btn) {
   if (tab === "reservas")   cargarTablaReservas();
   if (tab === "semana")     cargarTablaSemana();
   if (tab === "pendientes") cargarPendientes();
+  if (tab === "descuentos") cargarDescuentos();
 }
 
 // ── Canchas (selector filtro) ─────────────────────────────────────────────
@@ -223,12 +224,26 @@ async function cargarTurnos() {
 function crearCardTurno(t) {
   const card = document.createElement("div");
   card.className = "turno-card";
+  if (t.precio_descuento) card.classList.add("con-descuento");
   card.onclick   = () => abrirModalReserva(t);
+
+  let precioHtml = "";
+  if (t.precio_descuento) {
+    precioHtml = `
+      <div class="precio-con-descuento">
+        <span class="precio-original">${formatPrecio(t.precio_original)}</span>
+        <span class="precio-descuento">${formatPrecio(t.precio_descuento)} / hora</span>
+        <span class="descuento-badge">-${t.descuento_porcentaje}%</span>
+      </div>`;
+  } else {
+    precioHtml = `<div class="precio">${formatPrecio(t.cancha.precio_hora)} / hora</div>`;
+  }
+
   card.innerHTML = `
     <div class="hora">${t.hora_inicio.slice(0,5)} – ${t.hora_fin.slice(0,5)}</div>
     <div class="cancha-nombre">${t.cancha.nombre}</div>
     <span class="tipo-badge">${formatTipo(t.cancha.tipo)}</span>
-    <div class="precio">${formatPrecio(t.cancha.precio_hora)} / hora</div>
+    ${precioHtml}
     <div class="fecha-tag">📅 ${formatFecha(t.fecha)}</div>
   `;
   return card;
@@ -245,7 +260,15 @@ function abrirModalReserva(turno) {
   document.getElementById("info-tipo").textContent    = formatTipo(turno.cancha.tipo);
   document.getElementById("info-fecha").textContent   = formatFecha(turno.fecha);
   document.getElementById("info-horario").textContent = `${turno.hora_inicio.slice(0,5)} – ${turno.hora_fin.slice(0,5)}`;
-  document.getElementById("info-precio").textContent  = formatPrecio(turno.cancha.precio_hora);
+  const precioEl = document.getElementById("info-precio");
+  if (turno.precio_descuento) {
+    precioEl.innerHTML = `
+      <span style="text-decoration:line-through;color:var(--muted);margin-right:8px">${formatPrecio(turno.precio_original)}</span>
+      <span style="color:var(--green);font-weight:700">${formatPrecio(turno.precio_descuento)}</span>
+      <span class="descuento-badge" style="margin-left:6px">-${turno.descuento_porcentaje}%</span>`;
+  } else {
+    precioEl.textContent = formatPrecio(turno.cancha.precio_hora);
+  }
 
   if (state.usuario) {
     document.getElementById("input-nombre").value = state.usuario.nombre;
@@ -317,11 +340,27 @@ async function confirmarReserva() {
 // ── Modal Pago ────────────────────────────────────────────────────────────
 function abrirModalPago() {
   if (!state.reservaCreada) { console.error("[PAGO] No hay reserva"); return; }
-  document.getElementById("pago-subtitle").textContent =
-    `Reserva #${state.reservaCreada.id} — ${formatPrecio(state.turnoSel?.cancha?.precio_hora || 0)}`;
+  const turno = state.turnoSel;
+  const precioFinal = turno?.precio_descuento || turno?.cancha?.precio_hora || 0;
+  const precioSenia = Math.round(precioFinal * 0.5);
+  const precioLabel = turno?.precio_descuento
+    ? `${formatPrecio(turno.precio_original)} → ${formatPrecio(precioFinal)}`
+    : formatPrecio(precioFinal);
+  document.getElementById("pago-subtitle").innerHTML =
+    `Reserva #${state.reservaCreada.id} — ` +
+    `<strong>Total:</strong> ${precioLabel} | ` +
+    `<strong>Seña (50%):</strong> ${formatPrecio(precioSenia)}`;
+  // Mostrar ambas opciones
+  document.getElementById("pago-btn-mp-total").style.display = "flex";
+  document.getElementById("pago-btn-mp-senia").style.display = "flex";
+  document.getElementById("pago-btn-total").style.display = "flex";
+  document.getElementById("pago-btn-senia").style.display = "flex";
+  document.getElementById("pago-simular-rechazado").style.display = "flex";
   // Ocultar sección verificar hasta que el usuario abra MP
   document.getElementById("mp-verificar-section").style.display = "none";
+  document.getElementById("pago-tipo-info").style.display = "none";
   state.mpAbierto = false;
+  state.tipoPagoSeleccionado = "completo";
   document.getElementById("modal-pago").classList.add("open");
 }
 
@@ -329,13 +368,13 @@ function cerrarModalPago() {
   document.getElementById("modal-pago").classList.remove("open");
 }
 
-async function pagarConMP() {
+async function pagarConMP(tipoPago = "completo") {
   if (!state.reservaCreada) return;
-  console.log(`[PAGO-MP] Iniciando para reserva #${state.reservaCreada.id}`);
+  console.log(`[PAGO-MP] Iniciando para reserva #${state.reservaCreada.id} tipo=${tipoPago}`);
   mostrarToast("Generando link de pago...", "info");
 
   try {
-    const data = await apiFetch(`/pagos/link/${state.reservaCreada.id}`);
+    const data = await apiFetch(`/pagos/link/${state.reservaCreada.id}?tipo_pago=${tipoPago}`);
 
     if (data.modo === "simulacion") {
       mostrarToast("Token MP no configurado. Usá 'Simular pago aprobado'.", "error");
@@ -351,6 +390,7 @@ async function pagarConMP() {
 
     // Después de abrir MP, mostrar el botón de verificación
     state.mpAbierto = true;
+    state.tipoPagoSeleccionado = tipoPago;
     document.getElementById("mp-verificar-section").style.display = "block";
     mostrarToast("Checkout abierto. Después de pagar, clickeá 'Verificar pago'.", "info");
 
@@ -411,21 +451,27 @@ async function verificarPagoMP() {
   }
 }
 
-async function pagarMock(status) {
+async function pagarMock(status, tipoPago = "completo") {
   if (!state.reservaCreada) return;
-  console.log(`[MOCK] Simulando pago ${status} reserva #${state.reservaCreada.id}`);
+  console.log(`[MOCK] Simulando pago ${status} reserva #${state.reservaCreada.id} tipo=${tipoPago}`);
+  state.tipoPagoSeleccionado = tipoPago;
 
   try {
+    // Primero llamar al link con el tipo de pago para guardarlo
+    await apiFetch(`/pagos/link/${state.reservaCreada.id}?tipo_pago=${tipoPago}`);
+
     const data = await apiFetch("/pagos/mock-confirmar", {
       method: "POST",
       body: JSON.stringify({ reserva_id: state.reservaCreada.id, status }),
     });
     cerrarModalPago();
     if (status === "approved") {
-      mostrarToast(`✅ Pago aprobado — Reserva #${data.id}`, "success");
+      const tipoMsg = state.tipoPagoSeleccionado === "senia" ? " (seña 50%)" : "";
+      mostrarToast(`✅ Pago aprobado${tipoMsg} — Reserva #${data.id}`, "success");
       document.getElementById("btn-pagar").style.display = "none";
       document.getElementById("success-msg").textContent =
-        "🎉 ¡Pago confirmado! " + (state.usuario ? "Se sumó 1 ficha a tu cuenta." : "");
+        "🎉 ¡Pago confirmado!" + tipoMsg + ". " +
+        (state.usuario ? "Se sumó 1 ficha a tu cuenta." : "");
       cargarTurnos();
       if (state.usuario) { cargarHistorial(); cargarFichas(); }
     } else {
@@ -477,8 +523,9 @@ async function cargarHistorial() {
         <div class="historial-info">
           <div class="historial-cancha">${r.turno.cancha.nombre}</div>
           <div class="historial-fecha">📅 ${formatFecha(r.turno.fecha)} — ${formatTipo(r.turno.cancha.tipo)}</div>
-          <div class="historial-fecha">💰 ${formatPrecio(r.turno.cancha.precio_hora)}</div>
+          <div class="historial-fecha">💰 ${r.monto_pagado ? formatPrecio(r.monto_pagado) : formatPrecio(r.turno.cancha.precio_hora)} ${r.tipo_pago === 'senia' ? '<span style="color:var(--amber);font-size:.75rem">(seña 50%)</span>' : ''}</div>
           ${r.canje_fichas ? '<div class="historial-canje">⭐ Canjeado con fichas</div>' : ''}
+          ${r.tipo_pago === 'senia' ? '<div class="historial-canje" style="color:var(--amber)">🔶 Pago con seña (50%)</div>' : ''}
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
           <span class="estado-badge estado-${r.estado_pago}">${formatEstado(r.estado_pago)}</span>
@@ -705,9 +752,11 @@ async function cargarDashboard() {
       apiFetch(`/dashboard/turnos-hoy${params}`),
     ]);
 
-    // Actualizar nombre de cancha
-    document.getElementById("duenio-cancha-nombre").textContent =
-      `Cancha: ${resumen.cancha_nombre}`;
+    // Actualizar nombre de cancha y precio
+    document.getElementById("duenio-cancha-nombre").innerHTML =
+      `Cancha: ${resumen.cancha_nombre} — ` +
+      `<strong>Precio: ${formatPrecio(resumen.precio_hora)}/hora</strong>` +
+      `<button class="btn-nav" style="margin-left:8px;font-size:.75rem;padding:4px 10px" onclick="abrirModalPrecio()">✏️ Editar precio</button>`;
 
     // Stats
     document.getElementById("stat-aprobadas").textContent = resumen.reservas_aprobadas;
@@ -765,7 +814,7 @@ function renderizarTablaHoy(hoyData) {
       <td>${t.cliente || "—"}</td>
       <td>${t.email || "—"}</td>
       <td>${t.telefono || "—"}</td>
-      <td>${t.tipo_pago ? (t.tipo_pago === "canje" ? "⭐ Canje" : "💳 MP") : "—"}</td>
+      <td>${t.tipo_pago ? (t.tipo_pago === "canje" ? "⭐ Canje" : t.tipo_pago === "senia" ? "🔶 Seña" : "💳 MP") : "—"}</td>
       <td>${acciones}</td>
     </tr>`;
   }).join("");
@@ -809,7 +858,7 @@ async function cargarTablaReservas() {
         <td>${r.email}</td>
         <td>${r.telefono}</td>
         <td><span class="estado-badge estado-${r.estado_pago}">${formatEstado(r.estado_pago)}</span></td>
-        <td>${r.tipo_pago === "canje" ? "⭐ Canje" : "💳 MP"}</td>
+        <td>${r.tipo_pago === "canje" ? "⭐ Canje" : r.tipo_pago === "senia" ? "🔶 Seña" : "💳 MP"}</td>
         <td style="font-size:.78rem;color:var(--muted)">${r.reservado_el}</td>
         <td>${r.estado_pago === 'pendiente' ? `
           <button class="btn-verificar" style="font-size:.78rem;padding:6px 10px"
@@ -881,7 +930,7 @@ async function cargarPendientes() {
         <div class="pendiente-info">
           <div class="pendiente-cliente">${r.cliente}</div>
           <div class="pendiente-detalle">📧 ${r.email} · 📱 ${r.telefono}</div>
-          <div class="pendiente-detalle">📅 ${r.fecha} · ${r.tipo_pago === 'canje' ? '⭐ Canje' : '💳 MP'}</div>
+          <div class="pendiente-detalle">📅 ${r.fecha} · ${r.tipo_pago === 'canje' ? '⭐ Canje' : r.tipo_pago === 'senia' ? '🔶 Seña' : '💳 MP'}</div>
           <div class="pendiente-reserva-id">Reserva #${r.reserva_id} — creada ${r.reservado_el}</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -930,6 +979,141 @@ async function verificarPagoDashboard(reservaId, btn) {
     mostrarToast(e.message, "error");
     btn.disabled    = false;
     btn.textContent = original;
+  }
+}
+
+// ── Precio (dueño) ──────────────────────────────────────────────────────────
+function abrirModalPrecio() {
+  document.getElementById("precio-input").value = "";
+  document.getElementById("modal-precio").classList.add("open");
+}
+
+function cerrarModalPrecio() {
+  document.getElementById("modal-precio").classList.remove("open");
+}
+
+async function guardarPrecio() {
+  const val = document.getElementById("precio-input").value.trim();
+  if (!val || isNaN(val) || Number(val) < 1000) {
+    mostrarToast("Ingresá un precio válido (mín. $1.000)", "error");
+    return;
+  }
+  const precio = Number(val);
+  const btn = document.getElementById("btn-guardar-precio");
+  btn.disabled = true; btn.textContent = "Guardando...";
+  try {
+    await apiFetch(`/canchas/${state.usuario.cancha_id}/precio`, {
+      method: "PUT",
+      body: JSON.stringify({ precio_hora: precio }),
+    });
+    mostrarToast(`✅ Precio actualizado a ${formatPrecio(precio)}`, "success");
+    cerrarModalPrecio();
+    cargarDashboard();
+  } catch (e) {
+    mostrarToast(e.message, "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "Guardar";
+  }
+}
+
+// ── Descuentos (dueño) ──────────────────────────────────────────────────────
+async function cargarDescuentos() {
+  const lista = document.getElementById("descuentos-lista");
+  const canchaId = state.usuario?.cancha_id;
+  if (!canchaId) { lista.innerHTML = "<p>Sin cancha asignada</p>"; return; }
+
+  lista.innerHTML = `<div style="text-align:center;padding:20px"><div class="spinner"></div></div>`;
+  try {
+    const descuentos = await apiFetch(`/descuentos?cancha_id=${canchaId}`);
+    if (!descuentos.length) {
+      lista.innerHTML = `<p style="color:var(--muted);text-align:center;padding:20px">
+        No hay descuentos configurados. Creá uno nuevo.</p>`;
+      return;
+    }
+    lista.innerHTML = descuentos.map(d => `
+      <div class="descuento-card ${d.activo ? '' : 'inactivo'}">
+        <div class="descuento-info">
+          <div class="descuento-horario">🕐 ${d.hora_desde} – ${d.hora_hasta}</div>
+          <div class="descuento-pct"><strong>${d.porcentaje}% OFF</strong></div>
+          <div class="descuento-estado">${d.activo ? '✅ Activo' : '⛔ Inactivo'}</div>
+        </div>
+        <div class="descuento-acciones">
+          <button class="btn-verificar" style="font-size:.78rem;padding:6px 10px"
+            onclick="toggleDescuento(${d.id}, this)">
+            ${d.activo ? '⛔ Desactivar' : '✅ Activar'}
+          </button>
+          <button class="btn-verificar" style="font-size:.78rem;padding:6px 10px;background:var(--red);color:#fff"
+            onclick="eliminarDescuento(${d.id}, this)">
+            🗑️ Eliminar
+          </button>
+        </div>
+      </div>`).join("");
+  } catch (e) {
+    lista.innerHTML = `<p style="color:var(--red)">Error: ${e.message}</p>`;
+  }
+}
+
+async function toggleDescuento(descuentoId, btn) {
+  btn.disabled = true;
+  try {
+    await apiFetch(`/descuentos/${descuentoId}/toggle`, { method: "PUT" });
+    cargarDescuentos();
+  } catch (e) {
+    mostrarToast(e.message, "error");
+  }
+}
+
+async function eliminarDescuento(descuentoId, btn) {
+  if (!confirm("¿Eliminar este descuento?")) return;
+  btn.disabled = true;
+  try {
+    await apiFetch(`/descuentos/${descuentoId}`, { method: "DELETE" });
+    cargarDescuentos();
+    mostrarToast("Descuento eliminado", "success");
+  } catch (e) {
+    mostrarToast(e.message, "error");
+  }
+}
+
+function abrirModalDescuento() {
+  document.getElementById("descuento-hora-desde").value = "";
+  document.getElementById("descuento-hora-hasta").value = "";
+  document.getElementById("descuento-porcentaje").value = "10";
+  document.getElementById("modal-descuento").classList.add("open");
+}
+
+function cerrarModalDescuento() {
+  document.getElementById("modal-descuento").classList.remove("open");
+}
+
+async function guardarDescuento() {
+  const horaDesde = document.getElementById("descuento-hora-desde").value;
+  const horaHasta = document.getElementById("descuento-hora-hasta").value;
+  const porcentaje = parseInt(document.getElementById("descuento-porcentaje").value);
+
+  if (!horaDesde || !horaHasta) {
+    mostrarToast("Completá la franja horaria", "error");
+    return;
+  }
+  if (horaDesde >= horaHasta) {
+    mostrarToast("La hora de inicio debe ser menor a la de fin", "error");
+    return;
+  }
+
+  const btn = document.getElementById("btn-guardar-descuento");
+  btn.disabled = true; btn.textContent = "Guardando...";
+  try {
+    await apiFetch("/descuentos", {
+      method: "POST",
+      body: JSON.stringify({ hora_desde: horaDesde, hora_hasta: horaHasta, porcentaje }),
+    });
+    mostrarToast("✅ Descuento creado", "success");
+    cerrarModalDescuento();
+    cargarDescuentos();
+  } catch (e) {
+    mostrarToast(e.message, "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "Crear descuento";
   }
 }
 

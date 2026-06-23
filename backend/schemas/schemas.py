@@ -5,7 +5,7 @@ schemas/schemas.py — Validación de requests y serialización de responses.
 from datetime import date, time, datetime
 from typing import Optional
 from pydantic import BaseModel, EmailStr, field_validator
-from ..models.models import TipoCancha, EstadoPago, RolUsuario
+from ..models.models import TipoCancha, EstadoPago, TipoPago, RolUsuario
 
 
 # ── Cancha ──────────────────────────────────────────────────────────────────
@@ -29,6 +29,9 @@ class TurnoResponse(BaseModel):
     hora_fin: time
     disponible: bool
     cancha: CanchaResponse
+    precio_original: Optional[float] = None
+    precio_descuento: Optional[float] = None
+    descuento_porcentaje: Optional[int] = None
     model_config = {"from_attributes": True}
 
 
@@ -114,6 +117,8 @@ class ReservaResponse(BaseModel):
     estado_pago: EstadoPago
     mp_preference_id: Optional[str]
     canje_fichas: bool
+    tipo_pago: TipoPago
+    monto_pagado: Optional[float] = None
     created_at: datetime
     turno: TurnoResponse
     model_config = {"from_attributes": True}
@@ -138,6 +143,46 @@ class PagoConfirmacion(BaseModel):
 class CanjeRequest(BaseModel):
     turno_id: int
     usuario_id: int
+
+
+# ── Descuentos ─────────────────────────────────────────────────────────────────
+
+class DescuentoCreate(BaseModel):
+    hora_desde: str  # HH:MM
+    hora_hasta: str  # HH:MM
+    porcentaje: int  # 10, 15, 20
+
+    @field_validator("porcentaje")
+    @classmethod
+    def porcentaje_valido(cls, v: int) -> int:
+        if v not in (10, 15, 20):
+            raise ValueError("El porcentaje debe ser 10, 15 o 20")
+        return v
+
+
+class DescuentoResponse(BaseModel):
+    id: int
+    cancha_id: int
+    hora_desde: str
+    hora_hasta: str
+    porcentaje: int
+    activo: bool
+    model_config = {"from_attributes": True}
+
+
+# ── Precio cancha ──────────────────────────────────────────────────────────────
+
+class PrecioUpdate(BaseModel):
+    precio_hora: float
+
+    @field_validator("precio_hora")
+    @classmethod
+    def precio_valido(cls, v: float) -> float:
+        if v < 1000:
+            raise ValueError("El precio mínimo es $1.000")
+        if v > 100000:
+            raise ValueError("El precio máximo es $100.000")
+        return v
 
 
 # ── Genérico ──────────────────────────────────────────────────────────────────
