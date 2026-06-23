@@ -8,18 +8,16 @@ GET /turnos              → lista turnos disponibles (con filtros opcionales)
 GET /turnos/{turno_id}   → detalle de un turno
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from genericpath import exists
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import exists, and_, or_
 
 from ..db.database import get_db
-from ..models.models import Cancha, Turno
+from ..models.models import Cancha, Turno, Reserva, EstadoPago
 from ..schemas.schemas import CanchaResponse, TurnoResponse
-
-from sqlalchemy import exists, and_
-from ..models.models import Reserva, EstadoPago
 
 router = APIRouter(tags=["canchas y turnos"])
 
@@ -64,9 +62,17 @@ def listar_turnos(
             Turno.fecha <= hoy + timedelta(days=7)
         )
 
-    # Filtro disponibilidad
-#    if solo_disponibles:
-#        query = query.filter(Turno.disponible == True)
+    # No mostrar turnos cuya hora ya pasó (para hoy)
+    ahora = datetime.now()
+    query = query.filter(
+        or_(
+            Turno.fecha > ahora.date(),
+            and_(
+                Turno.fecha == ahora.date(),
+                Turno.hora_inicio > ahora.time()
+            )
+        )
+    )
 
     if solo_disponibles:
         query = query.filter(

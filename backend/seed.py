@@ -109,15 +109,24 @@ def seed_duenios(db, canchas: list):
 
 
 def seed_turnos(db, canchas: list):
-    if db.query(Turno).count() > 0:
-        print("ℹ️  Turnos ya existen")
-        return
+    from sqlalchemy import func as sa_func
 
     hoy = date.today()
+    fin = hoy + timedelta(days=7)
     total = 0
-    for delta in range(0, 8):
-        fecha = hoy + timedelta(days=delta)
-        for cancha in canchas:
+
+    for cancha in canchas:
+        max_f = db.query(sa_func.max(Turno.fecha)).filter(
+            Turno.cancha_id == cancha.id
+        ).scalar()
+
+        if max_f and max_f >= fin:
+            continue
+
+        inicio = max_f + timedelta(days=1) if max_f else hoy
+
+        for delta in range(0, (fin - inicio).days + 1):
+            fecha = inicio + timedelta(days=delta)
             for hora in range(9, 23):
                 db.add(Turno(
                     cancha_id=cancha.id,
@@ -128,7 +137,10 @@ def seed_turnos(db, canchas: list):
                 ))
                 total += 1
 
-    print(f"✅ {total} turnos generados (próximos 7 días, 9:00–23:00)")
+    if total:
+        print(f"✅ {total} turnos agregados (próximos 7 días, 9:00–23:00)")
+    else:
+        print("ℹ️  Turnos ya existen para los próximos 7 días")
 
 
 def run():

@@ -177,7 +177,7 @@ def reservas_cancha(
             "email":        r.email_cliente,
             "telefono":     r.telefono_cliente or "—",
             # Turno
-            "fecha":        str(r.turno.fecha),
+            "fecha":        r.turno.fecha.strftime("%d/%m/%Y"),
             "hora_inicio":  str(r.turno.hora_inicio)[:5],
             "hora_fin":     str(r.turno.hora_fin)[:5],
             # Pago
@@ -261,7 +261,7 @@ def turnos_hoy(
         f"{libres} libres / {pagados} pagados / {pendientes} pendientes"
     )
     return {
-        "fecha":     str(hoy),
+        "fecha":     hoy.strftime("%d/%m/%Y"),
         "resumen":   {"libres": libres, "pagados": pagados, "pendientes": pendientes},
         "turnos":    resultado,
     }
@@ -305,7 +305,7 @@ def proximos_dias(
         pendientes= sum(1 for t in turnos_dia if t.reserva and t.reserva.estado_pago == EstadoPago.PENDIENTE)
 
         resultado.append({
-            "fecha":      str(fecha),
+            "fecha":      fecha.strftime("%d/%m/%Y"),
             "dia_semana": fecha.strftime("%A"),   # Monday, Tuesday...
             "total":      total,
             "libres":     libres,

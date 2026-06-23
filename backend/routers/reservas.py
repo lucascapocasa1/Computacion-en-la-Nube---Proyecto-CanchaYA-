@@ -20,6 +20,7 @@ Lógica de reservas con la lógica correcta de disponibilidad:
 """
 
 import logging
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.exc import IntegrityError
@@ -96,6 +97,20 @@ def crear_reserva(
             raise HTTPException(
                 status_code=409,
                 detail="Este turno ya fue reservado y pagado. Elegí otro horario."
+            )
+
+        # Validar que el turno no sea viejo (ya pasó su hora)
+        now = datetime.now()
+        turno_dt = datetime.combine(turno.fecha, turno.hora_inicio)
+        if turno_dt <= now:
+            hora_actual = now.strftime("%H:%M")
+            logger.warning(
+                f"[RESERVA] Turno {payload.turno_id} es viejo "
+                f"(fecha={turno.fecha} hora={turno.hora_inicio}) — rechazado"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ese turno es viejo, elegí uno de las {hora_actual} en adelante."
             )
 
         # Verificar que no exista ya una reserva PENDIENTE para este turno
@@ -243,6 +258,16 @@ def canjear_fichas(
         raise HTTPException(status_code=404, detail="Turno no encontrado")
     if not turno.disponible:
         raise HTTPException(status_code=409, detail="El turno ya está ocupado")
+
+    # Validar que el turno no sea viejo
+    now = datetime.now()
+    turno_dt = datetime.combine(turno.fecha, turno.hora_inicio)
+    if turno_dt <= now:
+        hora_actual = now.strftime("%H:%M")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ese turno es viejo, elegí uno de las {hora_actual} en adelante."
+        )
 
     # Verificar fichas disponibles para esta cancha
     ficha = (
