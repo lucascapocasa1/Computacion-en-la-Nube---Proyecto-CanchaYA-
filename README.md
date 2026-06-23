@@ -1,30 +1,80 @@
-# ⚽ CanchaYa — Sistema de Reservas con Pagos y Fidelización
+# CanchaYa — Sistema de Reservas de Canchas con Pagos y Fidelización
 
-Trabajo Final de "Computación en la Nube".  
-Plataforma web para gestión de turnos de canchas de fútbol 5 y 7 con reservas online, pagos reales vía Mercado Pago, **pago con seña (50%)**, sistema de fidelización, **descuentos por franja horaria**, y panel de gestión para dueños.
+Trabajo Final de **"Computación en la Nube"**.
 
----
-
-## 🚀 Funcionalidades
-
-- **👤 Autenticación local** — Registro y login con JWT. Dos roles: Comprador y Dueño de cancha.
-- **⚽ Reserva de turnos** — Visualización de canchas y horarios disponibles por fecha, con filtros.
-- **💳 Pago completo o con seña (50%)** — El comprador elige entre pagar el 100% o una seña del 50% para reservar el turno.
-- **🏷️ Descuentos por franja horaria** — El dueño configura franjas (ej. 14–18) con descuento (10%, 15%, 20%). El precio original se muestra tachado y el descontado resaltado.
-- **💰 Variación de precio** — El dueño puede cambiar el precio por hora de su cancha desde el panel.
-- **🎟️ Sistema de fichas** — Cada reserva pagada suma 1 ficha por cancha. Con 10 fichas se canjea un turno gratis en esa misma cancha.
-- **❌ Cancelación de reservas** — El turno se libera automáticamente si el pago no se completa.
-- **📋 Historial de reservas** — El comprador ve todas sus reservas con estado de pago actualizable.
-- **📊 Panel del dueño** — Estadísticas, turnos del día, reservas, ocupación semanal, lista de pendientes, gestión de descuentos y actualización de precio.
+Plataforma web para gestionar turnos de canchas de fútbol 5 y 7 con reservas online, pagos vía Mercado Pago (completo o seña del 50 %), sistema de fidelización por fichas, descuentos por franja horaria y panel de gestión para dueños de cancha.
 
 ---
 
-## 📁 Estructura del proyecto
+## URLs en producción
+
+| Componente | URL |
+|------------|-----|
+| Frontend | https://computacion-en-la-nube---proyecto-canchaya.pages.dev |
+| Backend API | https://canchas-api-fy23.onrender.com |
+| Documentación Swagger | https://canchas-api-fy23.onrender.com/docs |
+
+---
+
+## Arquitectura
+
+```
+┌─────────────────────┐       ┌──────────────────────┐       ┌──────────┐
+│   Cloudflare Pages  │ HTTP  │   Render (Docker)     │  SQL  │  Render  │
+│  Frontend estático  │──────▶│  FastAPI + Uvicorn    │──────▶│PostgreSQL│
+│  (HTML/CSS/JS puro) │       │  Python 3.11          │       │          │
+└─────────────────────┘       └──────────────────────┘       └──────────┘
+                                      │
+                                      ▼
+                              ┌──────────────────┐
+                              │   Mercado Pago   │
+                              │  Checkout Pro    │
+                              └──────────────────┘
+```
+
+- **Frontend**: HTML, CSS y JavaScript vanilla (sin frameworks). Hosteado en Cloudflare Pages.
+- **Backend**: FastAPI (Python 3.11) con SQLAlchemy. Corre dentro de un contenedor Docker en Render.
+- **Base de datos**: PostgreSQL manejada por Render (plan gratis).
+- **Pagos**: Mercado Pago Checkout Pro (modo sandbox para pruebas).
+
+---
+
+## Tecnologías
+
+| Capa | Tecnología |
+|------|-----------|
+| Frontend | HTML5, CSS3, JavaScript vanilla |
+| Backend | Python 3.11, FastAPI, Uvicorn |
+| ORM | SQLAlchemy 2.x |
+| Base de datos | PostgreSQL 16 |
+| Autenticación | JWT (PyJWT) + bcrypt |
+| Pagos | Mercado Pago Checkout Pro (SDK) |
+| Emails | Resend (opcional) |
+| Contenedor | Docker |
+| Hosting frontend | Cloudflare Pages |
+| Hosting backend | Render (Web Service + Docker) |
+| Base de datos cloud | Render PostgreSQL |
+
+---
+
+## Funcionalidades
+
+- **Autenticación local** — Registro y login con JWT. Dos roles: Comprador y Dueño de cancha.
+- **Reserva de turnos** — Visualización de canchas y horarios disponibles por fecha, con filtros.
+- **Pago completo o con seña (50 %)** — El comprador elige entre pagar el 100 % o una seña del 50 %.
+- **Descuentos por franja horaria** — El dueño configura franjas (ej. 14–18) con descuento (10 %, 15 %, 20 %).
+- **Variación de precio** — El dueño cambia el precio por hora de su cancha desde el panel.
+- **Sistema de fichas** — Cada reserva pagada suma 1 ficha. Con 10 fichas se canjea un turno gratis.
+- **Cancelación de reservas** — El turno se libera automáticamente si el pago no se completa.
+- **Historial de reservas** — El comprador ve todas sus reservas con estado de pago.
+- **Panel del dueño** — Estadísticas, turnos del día, reservas, ocupación semanal, gestión de descuentos y precio.
+
+---
+
+## Estructura del proyecto
 
 ```
 canchas/
-├── .do/
-│   └── app.yaml               # Spec de deploy para DigitalOcean App Platform
 ├── backend/
 │   ├── core/
 │   │   ├── config.py          # Variables de entorno (pydantic-settings)
@@ -39,144 +89,124 @@ canchas/
 │   │   ├── auth.py            # POST /auth/registro, /auth/login, GET /auth/me
 │   │   ├── turnos.py          # GET /canchas, GET /turnos (con descuentos)
 │   │   ├── reservas.py        # POST /reservas, historial, fichas, canje
-│   │   ├── pagos.py           # Link MP (total/seña), verificación activa, webhook, mock
+│   │   ├── pagos.py           # Link MP (total/seña), verificación, webhook, mock
 │   │   ├── dashboard.py       # Panel exclusivo para dueños de cancha
 │   │   ├── canchas.py         # PUT /canchas/{id}/precio (actualizar precio)
 │   │   └── descuentos.py      # CRUD de descuentos por franja horaria
 │   ├── services/
 │   │   └── email.py           # Emails transaccionales con Resend
 │   ├── main.py                # Punto de entrada FastAPI
-│   ├── seed.py                # Datos iniciales: canchas, turnos y usuarios dueños
+│   ├── seed.py                # Crea tablas + datos iniciales
 │   ├── requirements.txt
 │   ├── .env.example
-│   └── .env                   # ← no commitear
+│   └── .env                   # No se sube al repo
 ├── frontend/
 │   ├── index.html             # Interfaz principal (comprador + dueño)
 │   ├── app.js                 # Lógica del frontend
 │   ├── styles.css             # Todos los estilos
 │   ├── config.js              # API_BASE (apunta al backend)
 │   ├── pago-exitoso.html      # Redirect de MP tras pago aprobado
-│   └── pago-fallido.html      # Redirect de MP tras pago rechazado
-├── Dockerfile                 # Imagen Docker para DigitalOcean / cualquier VPS
-├── DEPLOY_DIGITALOCEAN.md     # Guía paso a paso de deploy en DO
-├── render.yaml                # Deploy alternativo en Render.com
-├── vercel.json                # Deploy del frontend en Vercel
+│   ├── pago-fallido.html      # Redirect de MP tras pago rechazado
+│   └── _redirects             # Reglas de redirección para Cloudflare Pages
+├── Dockerfile                 # Imagen Docker para Render
+├── render.yaml                # Config de infraestructura para Render
 └── README.md
 ```
 
 ---
 
-## 🗄️ Modelo de base de datos
+## Modelo de base de datos
 
-```
-canchas
-  id            PK
-  nombre        VARCHAR(100)
-  tipo          ENUM('futbol_5', 'futbol_7')
-  precio_hora   NUMERIC(10,2)
-  activa        BOOLEAN
+### canchas
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| id | INTEGER PK | |
+| nombre | VARCHAR(100) | |
+| tipo | ENUM('futbol_5','futbol_7') | |
+| precio_hora | NUMERIC(10,2) | |
+| activa | BOOLEAN | |
 
-usuarios
-  id            PK
-  nombre        VARCHAR(150)
-  email         VARCHAR(200)   UNIQUE
-  password_hash VARCHAR(200)   ← bcrypt, nunca texto plano
-  rol           ENUM('comprador', 'duenio')
-  cancha_id     FK → canchas.id   nullable  ← solo para dueños
-  activo        BOOLEAN
-  created_at    TIMESTAMP
+### usuarios
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| id | INTEGER PK | |
+| nombre | VARCHAR(150) | |
+| email | VARCHAR(200) | UNIQUE |
+| password_hash | VARCHAR(200) | bcrypt |
+| rol | ENUM('comprador','duenio') | |
+| cancha_id | FK → canchas.id | NULL para compradores |
+| activo | BOOLEAN | |
+| created_at | TIMESTAMP | |
 
-turnos
-  id            PK
-  cancha_id     FK → canchas.id
-  fecha         DATE
-  hora_inicio   TIME
-  hora_fin      TIME
-  disponible    BOOLEAN        ← False solo cuando el pago fue APROBADO
-  UNIQUE(cancha_id, fecha, hora_inicio)
+### turnos
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| id | INTEGER PK | |
+| cancha_id | FK → canchas.id | |
+| fecha | DATE | |
+| hora_inicio | TIME | |
+| hora_fin | TIME | |
+| disponible | BOOLEAN | False solo si pago aprobado |
+| | UNIQUE(cancha_id, fecha, hora_inicio) | |
 
-reservas
-  id                PK
-  turno_id          FK → turnos.id   UNIQUE
-  usuario_id        FK → usuarios.id  nullable
-  nombre_cliente    VARCHAR(150)
-  email_cliente     VARCHAR(200)
-  telefono_cliente  VARCHAR(30)   nullable
-  estado_pago       ENUM('pendiente', 'aprobado', 'rechazado')
-  mp_preference_id  VARCHAR(200)  nullable
-  mp_payment_id     VARCHAR(200)  nullable
-  canje_fichas      BOOLEAN
-  tipo_pago         ENUM('completo', 'senia')   ← completo (100%) o seña (50%)
-  monto_pagado      NUMERIC(10,2) nullable      ← monto efectivamente cobrado
-  created_at        TIMESTAMP
-  updated_at        TIMESTAMP
+### reservas
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| id | INTEGER PK | |
+| turno_id | FK → turnos.id | UNIQUE |
+| usuario_id | FK → usuarios.id | NULL si reserva anónima |
+| nombre_cliente | VARCHAR(150) | |
+| email_cliente | VARCHAR(200) | |
+| telefono_cliente | VARCHAR(30) | NULL |
+| estado_pago | ENUM('pendiente','aprobado','rechazado') | |
+| mp_preference_id | VARCHAR(200) | NULL |
+| mp_payment_id | VARCHAR(200) | NULL |
+| canje_fichas | BOOLEAN | |
+| tipo_pago | ENUM('completo','senia') | |
+| monto_pagado | NUMERIC(10,2) | NULL |
+| created_at | TIMESTAMP | |
+| updated_at | TIMESTAMP | |
 
-fichas
-  id                PK
-  usuario_id        FK → usuarios.id
-  cancha_id         FK → canchas.id
-  fichas_acumuladas INT
-  fichas_canjeadas  INT
-  UNIQUE(usuario_id, cancha_id)
-  → fichas_disponibles = fichas_acumuladas - fichas_canjeadas
+### fichas
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| id | INTEGER PK | |
+| usuario_id | FK → usuarios.id | |
+| cancha_id | FK → canchas.id | |
+| fichas_acumuladas | INTEGER | |
+| fichas_canjeadas | INTEGER | |
+| | UNIQUE(usuario_id, cancha_id) | |
+| | fichas_disponibles = acumuladas − canjeadas | |
 
-descuentos
-  id            PK
-  cancha_id     FK → canchas.id
-  hora_desde    TIME
-  hora_hasta    TIME
-  porcentaje    INT           ← 10, 15 o 20
-  activo        BOOLEAN
-```
+### descuentos
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| id | INTEGER PK | |
+| cancha_id | FK → canchas.id | |
+| hora_desde | TIME | |
+| hora_hasta | TIME | |
+| porcentaje | INTEGER | 10, 15 o 20 |
+| activo | BOOLEAN | |
 
 ---
 
-## ⚙️ Setup local paso a paso
+## Setup local
 
-### 1. Clonar el repo y entrar al directorio
+### Requisitos
 
-```bash
-git clone https://github.com/tu-usuario/canchayas.git
-cd canchayas
-```
+- Python 3.11 o superior
+- PostgreSQL 15 o superior
+- Git
+- Navegador web moderno
 
-### 2. Crear y activar entorno virtual Python
-
-```bash
-cd backend
-python -m venv venv
-
-# Linux/Mac:
-source venv/bin/activate
-
-# Windows:
-venv\Scripts\activate
-```
-
-### 3. Instalar dependencias
+### 1. Clonar el repositorio
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/tu-usuario/canchas.git
+cd canchas
 ```
 
-### 4. Configurar variables de entorno
-
-```bash
-cp .env.example .env
-```
-
-Editá `.env`. Lo mínimo para arrancar localmente:
-
-```env
-DATABASE_URL=postgresql://postgres:1234@localhost:5432/canchas_db
-CORS_ORIGINS=http://localhost:5500,http://127.0.0.1:5500
-FRONTEND_URL=http://localhost:5500
-BACKEND_URL=http://localhost:8000
-MP_ACCESS_TOKEN=TEST-xxxxxxxxxxxx   # tu token de prueba de MP
-SECRET_KEY=cualquier-string-largo-para-jwt
-```
-
-### 5. Crear la base de datos PostgreSQL
+### 2. Crear la base de datos
 
 ```bash
 psql -U postgres
@@ -184,38 +214,48 @@ CREATE DATABASE canchas_db;
 \q
 ```
 
-### 6. Correr el seed
+### 3. Configurar el backend
 
-Crea las tablas (incluyendo columnas nuevas vía migración automática), las 3 canchas, los turnos de los próximos 7 días y los usuarios dueños:
+```bash
+cd backend
+python -m venv venv
+
+# Windows:
+venv\Scripts\activate
+
+# Linux/Mac:
+source venv/bin/activate
+
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Editá `backend/.env` con tus datos locales:
+
+```env
+DATABASE_URL=postgresql://postgres:tu_password@localhost:5432/canchas_db
+CORS_ORIGINS=http://localhost:5500,http://127.0.0.1:5500
+FRONTEND_URL=http://localhost:5500
+BACKEND_URL=http://localhost:8000
+SECRET_KEY=un-string-largo-y-aleatorio-para-jwt
+MP_ACCESS_TOKEN=TEST-tu_token_de_mercadopago
+RESEND_API_KEY=                # opcional
+FROM_EMAIL=noreply@tudominio.com  # opcional
+```
+
+### 4. Ejecutar el seed (crea tablas + datos iniciales)
 
 ```bash
 # Desde la raíz del proyecto
 python -m backend.seed
 ```
 
-Salida esperada:
+Esto crea:
+- Las 3 canchas
+- Turnos para los próximos 7 días (9:00 a 23:00)
+- 3 usuarios dueños (uno por cancha)
 
-```
-✅ Tablas creadas (o ya existían)
-✅ 3 canchas creadas
-✅ 3 dueños creados
-
-  🔑 CREDENCIALES DE DUEÑOS:
-  ┌─────────────────────────────────────────────┐
-  │ La Bombonera  → bombonera@canchayas.com     │
-  │               → contraseña: bombonera123    │
-  │ El Monumental → monumental@canchayas.com    │
-  │               → contraseña: monumental123   │
-  │ Arena Fútbol 7→ arena7@canchayas.com        │
-  │               → contraseña: arena7123       │
-  └─────────────────────────────────────────────┘
-
-✅ 168 turnos generados (próximos 7 días, 9:00–23:00)
-
-🎉 Seed completado.
-```
-
-### 7. Iniciar el backend
+### 5. Iniciar el backend
 
 ```bash
 # Desde la raíz del proyecto
@@ -223,21 +263,21 @@ uvicorn backend.main:app --reload --port 8000
 ```
 
 La API queda en `http://localhost:8000`  
-Documentación interactiva (Swagger): `http://localhost:8000/docs`
+Swagger: `http://localhost:8000/docs`
 
-### 8. Configurar el frontend
+### 6. Configurar el frontend
 
-Editá `frontend/config.js`:
+Editá `frontend/config.js` y descomentá la línea de desarrollo local:
 
 ```javascript
-window.API_BASE = "http://127.0.0.1:8000";
+window.API_BASE = "http://localhost:8000";
 ```
 
-### 9. Servir el frontend
+### 7. Servir el frontend
 
 ```bash
 # Opción A: Live Server de VS Code
-# Click derecho en frontend/index.html → "Open with Live Server"
+#   Click derecho en frontend/index.html → "Open with Live Server"
 
 # Opción B: Python
 cd frontend
@@ -252,211 +292,253 @@ Abrí `http://localhost:5500` en el navegador.
 
 ---
 
-## 👥 Roles y acceso
+## Roles y credenciales
 
-| Rol           | Acceso                                                         |
-| ------------- | -------------------------------------------------------------- |
-| **Anónimo**   | Ver turnos disponibles y reservar (sin guardar historial)      |
-| **Comprador** | Todo lo anterior + historial de reservas + fichas de fidelidad |
-| **Dueño**     | Solo el panel de gestión de su cancha (no puede reservar)      |
+| Rol | Acceso |
+|-----|--------|
+| **Anónimo** | Ver turnos disponibles y reservar (sin historial) |
+| **Comprador** | Registro desde la app, historial de reservas, fichas de fidelidad |
+| **Dueño** | Panel de gestión de su cancha (estadísticas, precio, descuentos) |
 
-Los compradores se registran desde la app. Los dueños se crean con el seed y tienen una cuenta por cancha.
+### Dueños de prueba (creados por el seed)
+
+| Cancha | Email | Contraseña |
+|--------|-------|-----------|
+| La Bombonera | bombonera@canchayas.com | bombonera123 |
+| El Monumental | monumental@canchayas.com | monumental123 |
+| Arena Fútbol 7 | arena7@canchayas.com | arena7123 |
 
 ---
 
-## 🔌 Endpoints de la API
+## Endpoints de la API
 
 ### Autenticación
-
-| Método | Endpoint         | Descripción                   |
-| ------ | ---------------- | ----------------------------- |
-| POST   | `/auth/registro` | Crear cuenta de comprador     |
-| POST   | `/auth/login`    | Login (devuelve JWT)          |
-| GET    | `/auth/me`       | Datos del usuario autenticado |
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/auth/registro` | Crear cuenta de comprador |
+| POST | `/auth/login` | Login (devuelve JWT) |
+| GET | `/auth/me` | Datos del usuario autenticado |
 
 ### Canchas y turnos
-
-| Método | Endpoint              | Descripción                                              |
-| ------ | --------------------- | -------------------------------------------------------- |
-| GET    | `/canchas`            | Lista canchas activas                                    |
-| GET    | `/turnos`             | Turnos disponibles (incluye precios con descuento si aplica) |
-| GET    | `/turnos/{id}`        | Detalle de un turno                                      |
-| PUT    | `/canchas/{id}/precio`| Actualiza el precio de la cancha (solo dueño)            |
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/canchas` | Lista canchas activas |
+| GET | `/turnos` | Turnos disponibles (incluye precios con descuento) |
+| GET | `/turnos/{id}` | Detalle de un turno |
+| PUT | `/canchas/{id}/precio` | Actualiza precio (solo dueño) |
 
 ### Reservas
-
-| Método | Endpoint                          | Descripción                               |
-| ------ | --------------------------------- | ----------------------------------------- |
-| POST   | `/reservas`                       | Crear reserva (estado inicial: pendiente) |
-| GET    | `/reservas/{id}`                  | Detalle de una reserva                    |
-| POST   | `/reservas/cancelar/{id}`         | Cancelar reserva pendiente                |
-| GET    | `/reservas/mis-reservas`          | Historial del usuario logueado            |
-| GET    | `/reservas/mis-fichas`            | Fichas de fidelidad por cancha            |
-| POST   | `/reservas/canjear?turno_id={id}` | Canjear 10 fichas por un turno gratis     |
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/reservas` | Crear reserva |
+| GET | `/reservas/{id}` | Detalle de una reserva |
+| POST | `/reservas/cancelar/{id}` | Cancelar reserva pendiente |
+| GET | `/reservas/mis-reservas` | Historial del usuario |
+| GET | `/reservas/mis-fichas` | Fichas de fidelidad |
+| POST | `/reservas/canjear?turno_id={id}` | Canjear 10 fichas |
 
 ### Pagos
-
-| Método | Endpoint                              | Descripción                                                   |
-| ------ | ------------------------------------- | ------------------------------------------------------------- |
-| GET    | `/pagos/link/{reserva_id}`            | Genera checkout de MP (`?tipo_pago=completo` o `=senia`)      |
-| GET    | `/pagos/verificar/{reserva_id}`       | Consulta activamente el estado del pago en MP                 |
-| POST   | `/pagos/mock-confirmar`               | Simula pago aprobado/rechazado (demo local)                   |
-| POST   | `/pagos/webhook`                      | IPN de Mercado Pago (solo funciona con URL pública)           |
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/pagos/link/{reserva_id}` | Genera checkout de MP (`?tipo_pago=completo` o `=senia`) |
+| GET | `/pagos/verificar/{reserva_id}` | Consulta estado del pago en MP |
+| POST | `/pagos/mock-confirmar` | Simula pago (demo local) |
+| POST | `/pagos/webhook` | IPN de Mercado Pago |
 
 ### Descuentos (solo dueños)
-
-| Método | Endpoint                     | Descripción                          |
-| ------ | ---------------------------- | ------------------------------------ |
-| GET    | `/descuentos`                | Lista descuentos (filtro por cancha) |
-| POST   | `/descuentos`                | Crear nuevo descuento                |
-| PUT    | `/descuentos/{id}/toggle`    | Activar/desactivar descuento         |
-| DELETE | `/descuentos/{id}`           | Eliminar descuento                   |
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/descuentos` | Lista descuentos |
+| POST | `/descuentos` | Crear descuento |
+| PUT | `/descuentos/{id}/toggle` | Activar/desactivar |
+| DELETE | `/descuentos/{id}` | Eliminar |
 
 ### Dashboard (solo dueños)
-
-| Método | Endpoint                   | Descripción                        |
-| ------ | -------------------------- | ---------------------------------- |
-| GET    | `/dashboard/resumen`       | Estadísticas globales de la cancha |
-| GET    | `/dashboard/turnos-hoy`    | Timeline completo del día          |
-| GET    | `/dashboard/reservas`      | Todas las reservas con filtros     |
-| GET    | `/dashboard/proximos-dias` | Ocupación de los próximos 7 días   |
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/dashboard/resumen` | Estadísticas globales |
+| GET | `/dashboard/turnos-hoy` | Timeline del día |
+| GET | `/dashboard/reservas` | Reservas con filtros |
+| GET | `/dashboard/proximos-dias` | Ocupación semanal |
 
 ### Salud
-
-| Método | Endpoint  | Descripción         |
-| ------ | --------- | ------------------- |
-| GET    | `/`       | Health check        |
-| GET    | `/health` | Estado del servicio |
-
----
-
-## 💳 Funcionalidades detalladas
-
-### Seña (pago del 50%)
-
-Al momento de pagar, el comprador puede elegir entre **"Pagar total"** (100%) o **"Pagar con seña (50%)"**. En ambos casos la reserva se confirma y el turno se bloquea, pero en el historial y dashboard queda registrado como "seña" con el monto pagado. El dueño ve qué reservas son con seña en el panel.
-
-### Descuentos por franja horaria
-
-El dueño accede a la pestaña **"🏷️ Descuentos"** en el dashboard y puede:
-
-1. Crear descuentos seleccionando hora desde, hora hasta y porcentaje (10%, 15% o 20%).
-2. Activar o desactivar descuentos sin eliminarlos.
-3. Eliminar descuentos.
-
-Cuando un turno cae dentro de una franja con descuento activo, en la vista del comprador se muestra:
-
-- Precio original **tachado**
-- Precio con descuento **resaltado en verde**
-- Badge **"-X%"**
-
-El descuento se aplica también al momento del pago (tanto total como seña).
-
-### Precio de cancha
-
-El dueño ve el precio actual de su cancha en el encabezado del dashboard y puede editarlo con el botón **"✏️ Editar precio"**. El cambio impacta inmediatamente en todos los turnos futuros.
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/` | Health check |
+| GET | `/health` | Estado del servicio |
 
 ---
 
-## 💳 Mercado Pago — Cómo probarlo localmente
+## Deploy en producción
 
-### Obtener el Access Token
+### Requisitos
+
+- Cuenta en [Render](https://render.com)
+- Cuenta en [Cloudflare Pages](https://pages.cloudflare.com)
+- Cuenta en [Mercado Pago Developers](https://www.mercadopago.com.ar/developers/)
+- (Opcional) Cuenta en [Resend](https://resend.com) para emails
+
+### 1. Backend en Render
+
+Render permite deployar desde el repositorio de Git usando `render.yaml` (Infrastructure as Code).
+
+#### Opción A: Deploy automático con render.yaml
+
+```bash
+git push origin main
+```
+
+Render detecta automáticamente el archivo `render.yaml` y crea:
+- Un **Web Service** (Docker) para la API
+- Una **base de datos PostgreSQL**
+
+#### Opción B: Deploy manual desde el dashboard
+
+1. Ir a https://dashboard.render.com
+2. **New +** → **Blueprint** → Conectá tu repositorio de Git
+3. Render lee `render.yaml` y te muestra los recursos a crear
+4. Completá las variables que no están en el archivo (sincronizalas desde el dashboard):
+   - `SECRET_KEY` → string largo y aleatorio
+   - `MP_ACCESS_TOKEN` → token de prueba de Mercado Pago
+   - `RESEND_API_KEY` → (opcional) key de Resend
+   - `FROM_EMAIL` → (opcional) email remitente
+5. Hacé clic en **Apply**
+
+#### Verificar que funciona
+
+- La API queda en `https://canchas-api-xxxx.onrender.com`
+- Probá: `https://canchas-api-xxxx.onrender.com/health`
+- Probá: `https://canchas-api-xxxx.onrender.com/canchas`
+
+> **Importante**: el `Dockerfile` ejecuta `python -m backend.seed` al iniciar, lo que crea las tablas y los datos iniciales automáticamente. No hace falta correr el seed manualmente.
+
+### 2. Frontend en Cloudflare Pages
+
+El frontend es HTML/CSS/JS estático, no necesita build.
+
+1. Ir a https://dash.cloudflare.com
+2. **Workers & Pages** → **Pages** → **Connect to Git**
+3. Conectá tu repositorio y seleccioná la branch
+4. En **Build settings**:
+   - **Build command**: dejar vacío
+   - **Build output directory**: `frontend`
+5. Hacé clic en **Save and Deploy**
+
+#### Archivo `_redirects`
+
+Cloudflare Pages usa el archivo `frontend/_redirects` para manejar las rutas de las páginas de retorno de Mercado Pago:
+
+```
+/pago-exitoso.html  /pago-exitoso.html  200
+/pago-fallido.html  /pago-fallido.html  200
+```
+
+#### Configurar API_BASE
+
+Antes del deploy, editá `frontend/config.js` para que apunte a tu backend en Render:
+
+```javascript
+window.API_BASE = "https://canchas-api-xxxx.onrender.com";
+```
+
+### 3. Mercado Pago (sandbox)
 
 1. Entrá a https://www.mercadopago.com.ar/developers/panel
-2. Tu aplicación → **Credenciales** → **Credenciales de prueba**
-3. Copiá el **Access Token** (empieza con `TEST-`, no el Public Key)
-4. Pegalo en `.env` como `MP_ACCESS_TOKEN`
+2. Creá una aplicación → **Credenciales** → **Credenciales de prueba**
+3. Copiá el **Access Token** (empieza con `TEST-`)
+4. Pegalo en las variables de entorno de Render como `MP_ACCESS_TOKEN`
 
-### Por qué el webhook no funciona en local
+También creá **cuentas de prueba** (vendedor y comprador) desde el panel de MP.
 
-MP necesita una URL pública para enviar las notificaciones. Con `BACKEND_URL=http://localhost:8000` el webhook nunca llega. El sistema lo resuelve con **verificación activa**:
+#### Tarjetas de prueba
 
-1. El usuario paga en la ventana de MP
-2. Vuelve a la app y hace click en **"🔍 Verificar pago"**
-3. El backend consulta directamente a la API de MP usando el `preference_id`
-4. Si el pago fue aprobado, confirma la reserva y bloquea el turno
+| Tarjeta | Número | CVV | Venc. | Resultado |
+|---------|--------|-----|-------|-----------|
+| Mastercard | `5031 7557 3453 0604` | `123` | `11/25` | Aprobado |
+| Visa | `4509 9535 6623 3704` | `123` | `11/25` | Aprobado |
 
-En producción (con URL pública en DigitalOcean), el webhook funciona automáticamente sin necesidad del botón.
+### 4. (Opcional) Emails con Resend
 
-### Cuentas y tarjetas de prueba
+Si no se configura, la app funciona igual (el email se loggea en consola).
 
-Creá cuentas de prueba (vendedor y comprador) en el panel de MP. Para pagar usá los datos de la cuenta compradora de prueba y estas tarjetas:
-
-| Tarjeta    | Número                | CVV   | Venc.   | Resultado   |
-| ---------- | --------------------- | ----- | ------- | ----------- |
-| Mastercard | `5031 7557 3453 0604` | `123` | `11/25` | ✅ Aprobado |
-| Visa       | `4509 9535 6623 3704` | `123` | `11/25` | ✅ Aprobado |
-
----
-
-## 📧 Emails con Resend (opcional)
-
-Si no se configura, la app funciona igual y el email se loggea en consola.
-
-1. Registrate en https://resend.com (gratis, sin tarjeta — 3.000 mails/mes)
+1. Registrate en https://resend.com (3.000 mails/mes gratis)
 2. Creá una API Key y verificá un dominio
-3. En `.env`:
-   ```env
-   RESEND_API_KEY=re_xxxxxxxxxxxx
-   FROM_EMAIL=reservas@tudominio.com
-   ```
+3. Agregalo en las variables de entorno de Render:
+   - `RESEND_API_KEY`
+   - `FROM_EMAIL`
 
 ---
 
-## 🔒 Manejo de concurrencia en reservas
+## Variables de entorno
 
-`POST /reservas` usa `selectinload` + `SELECT FOR UPDATE` de PostgreSQL:
+| Variable | Requerida | Descripción |
+|----------|-----------|-------------|
+| `DATABASE_URL` | Sí | Connection string de PostgreSQL |
+| `SECRET_KEY` | Sí | Clave secreta para firmar JWT |
+| `MP_ACCESS_TOKEN` | Sí | Token de Mercado Pago (sandbox o producción) |
+| `CORS_ORIGINS` | No | Orígenes permitidos separados por coma |
+| `FRONTEND_URL` | No | URL del frontend (para redirects) |
+| `BACKEND_URL` | No | URL del backend (para webhooks) |
+| `RESEND_API_KEY` | No | API key de Resend |
+| `FROM_EMAIL` | No | Email remitente |
+
+---
+
+## Concurrencia en reservas
+
+`POST /reservas` usa `SELECT FOR UPDATE` de PostgreSQL para evitar que dos personas reserven el mismo turno simultáneamente:
 
 ```python
 turno = (
     db.query(Turno)
-    .options(selectinload(Turno.cancha))   # evita LEFT JOIN (incompatible con FOR UPDATE)
+    .options(selectinload(Turno.cancha))
     .filter(Turno.id == payload.turno_id)
-    .with_for_update()                     # bloquea la fila durante la transacción
+    .with_for_update()
     .first()
 )
 ```
 
-Se usa `selectinload` en lugar de `joinedload` porque este último genera un `LEFT OUTER JOIN` que PostgreSQL rechaza al combinarlo con `FOR UPDATE`. El lock previene reservas dobles simultáneas. Como segunda línea de defensa, la constraint `UNIQUE(turno_id)` en la tabla `reservas` rechaza cualquier duplicado a nivel de base de datos.
+Como segunda línea de defensa, la constraint `UNIQUE(turno_id)` en la tabla `reservas` rechaza duplicados a nivel de base de datos.
 
-El turno **no se bloquea visualmente** hasta que el pago sea aprobado. Una reserva en estado `pendiente` no cambia `turno.disponible`; solo lo hace la aprobación del pago.
+El turno **no se bloquea visualmente** hasta que el pago sea aprobado. Una reserva en estado `pendiente` no cambia `turno.disponible`.
 
 ---
 
-## 🌐 Deploy en DigitalOcean (recomendado)
+## Troubleshooting
 
-Ver `DEPLOY_DIGITALOCEAN.md` para la guía completa paso a paso.
+### Error: `relation "canchas" does not exist`
 
-Resumen rápido con el archivo `.do/app.yaml` incluido:
+Las tablas no están creadas. El `Dockerfile` ejecuta el seed automáticamente, pero si deployaste antes del cambio, ejecutalo manualmente:
 
 ```bash
-# Instalar doctl
-doctl auth init
-
-# Crear la app (backend + frontend estático + PostgreSQL)
-doctl apps create --spec .do/app.yaml
-
-# Después del primer deploy, correr el seed desde la consola de DO:
+# Desde la raíz del proyecto
 python -m backend.seed
 ```
 
-Costos estimados con los $200 de crédito del GitHub Student Pack:
+O forzá un redeploy en Render: Dashboard → canchas-api → Manual Deploy → Clear build cache & deploy.
 
-| Componente             | Plan         | Costo/mes    |
-| ---------------------- | ------------ | ------------ |
-| Backend (Web Service)  | Basic XXS    | ~$5          |
-| Frontend (Static Site) | Static       | Gratis       |
-| PostgreSQL             | Dev Database | ~$7          |
-| **Total**              |              | **~$12/mes** |
+### Error de CORS en producción
+
+Verificá que la variable `CORS_ORIGINS` en Render incluya la URL exacta de Cloudflare Pages:
+
+```
+https://computacion-en-la-nube---proyecto-canchaya.pages.dev,http://localhost:5500,http://127.0.0.1:5500
+```
+
+### Los datos no aparecen en pgAdmin
+
+Asegurate de estar conectado a la **misma base de datos** que usa Render. En el dashboard de Render:
+- **canchas-db** → **Connect** → **External Database URL**
+Usá esa URL en pgAdmin, no una base de datos local.
 
 ---
 
-## 📚 Servicios cloud utilizados
+## Servicios cloud utilizados
 
-| Servicio                        | Rol                         | Tier gratuito          |
-| ------------------------------- | --------------------------- | ---------------------- |
-| DigitalOcean App Platform       | Hosting del backend FastAPI | Sí (con crédito DO)    |
-| DigitalOcean Managed PostgreSQL | Base de datos               | Sí (con crédito DO)    |
-| DigitalOcean Static Sites       | Hosting del frontend        | Sí                     |
-| Mercado Pago Checkout Pro       | Pagos reales (sandbox)      | Sí                     |
-| Resend                          | Emails transaccionales      | 3.000 mails/mes gratis |
+| Servicio | Rol | Plan |
+|----------|-----|------|
+| Cloudflare Pages | Hosting del frontend | Gratuito |
+| Render Web Service | Hosting del backend (Docker) | Gratuito |
+| Render PostgreSQL | Base de datos | Gratuito |
+| Mercado Pago Checkout Pro | Pasarela de pagos (sandbox) | Gratuito |
+| Resend | Emails transaccionales | 3.000 mails/mes gratis |
