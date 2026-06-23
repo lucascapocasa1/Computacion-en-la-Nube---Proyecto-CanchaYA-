@@ -1,0 +1,3 @@
+# Redirecciones para Cloudflare Pages
+/pago-exitoso.html  /pago-exitoso.html  200
+/pago-fallido.html  /pago-fallido.html  200

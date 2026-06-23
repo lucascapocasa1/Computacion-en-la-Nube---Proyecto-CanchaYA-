@@ -1,45 +1,34 @@
-# render.yaml
-# ------------
-# Archivo de configuración para desplegar en Render.com
-# Render tiene un free tier con PostgreSQL y Web Services.
-#
-# Deploy:
-#   1. Creá una cuenta en https://render.com
-#   2. Conectá tu repo de GitHub
-#   3. "New Blueprint" → apuntá a este archivo
-#   4. Completá las variables de entorno marcadas con "sync: false"
-
 services:
-  # ── Backend FastAPI ──────────────────────────────────────────────────────
   - type: web
     name: canchas-api
     runtime: python
-    region: oregon   # Cambiá a "frankfurt" si tu audiencia es europea
-    plan: free       # Free tier: duerme después de 15min de inactividad
+    region: oregon
+    plan: free
     rootDir: backend
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: canchas-db
           property: connectionString
       - key: CORS_ORIGINS
-        value: "https://canchas-frontend.vercel.app"   # reemplazá con tu URL de Vercel
+        value: "https://bitter-surf-d556.lucascapocasa1.workers.dev"
       - key: FRONTEND_URL
-        value: "https://canchas-frontend.vercel.app"
+        value: "https://bitter-surf-d556.lucascapocasa1.workers.dev"
+      - key: BACKEND_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
       - key: MP_ACCESS_TOKEN
-        sync: false   # lo completás manualmente en el panel de Render
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: FROM_EMAIL
         sync: false
-      - key: ENV
-        value: production
 
-  # ── Base de datos PostgreSQL ─────────────────────────────────────────────
 databases:
   - name: canchas-db
     databaseName: canchas
     user: canchas_user
-    plan: free   # Free tier: 90 días gratis, luego USD 7/mes
+    plan: free
