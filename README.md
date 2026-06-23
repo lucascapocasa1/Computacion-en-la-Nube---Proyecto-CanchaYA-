@@ -1,7 +1,7 @@
 # ⚽ CanchaYa — Sistema de Reservas con Pagos y Fidelización
 
 Trabajo Final de "Computación en la Nube".  
-Plataforma web para gestión de turnos de canchas de fútbol 5 y 7 con reservas online, pagos reales vía Mercado Pago, sistema de fidelización y panel de gestión para dueños.
+Plataforma web para gestión de turnos de canchas de fútbol 5 y 7 con reservas online, pagos reales vía Mercado Pago, **pago con seña (50%)**, sistema de fidelización, **descuentos por franja horaria**, y panel de gestión para dueños.
 
 ---
 
@@ -9,11 +9,13 @@ Plataforma web para gestión de turnos de canchas de fútbol 5 y 7 con reservas 
 
 - **👤 Autenticación local** — Registro y login con JWT. Dos roles: Comprador y Dueño de cancha.
 - **⚽ Reserva de turnos** — Visualización de canchas y horarios disponibles por fecha, con filtros.
-- **💳 Pago con Mercado Pago** — Integración con Checkout Pro (sandbox). Confirmación activa de pago sin depender del webhook.
+- **💳 Pago completo o con seña (50%)** — El comprador elige entre pagar el 100% o una seña del 50% para reservar el turno.
+- **🏷️ Descuentos por franja horaria** — El dueño configura franjas (ej. 14–18) con descuento (10%, 15%, 20%). El precio original se muestra tachado y el descontado resaltado.
+- **💰 Variación de precio** — El dueño puede cambiar el precio por hora de su cancha desde el panel.
 - **🎟️ Sistema de fichas** — Cada reserva pagada suma 1 ficha por cancha. Con 10 fichas se canjea un turno gratis en esa misma cancha.
 - **❌ Cancelación de reservas** — El turno se libera automáticamente si el pago no se completa.
 - **📋 Historial de reservas** — El comprador ve todas sus reservas con estado de pago actualizable.
-- **📊 Panel del dueño** — Cada cancha tiene su usuario. El dueño ve: turnos del día, todas las reservas, ocupación semanal y lista de pendientes con verificación de pago.
+- **📊 Panel del dueño** — Estadísticas, turnos del día, reservas, ocupación semanal, lista de pendientes, gestión de descuentos y actualización de precio.
 
 ---
 
@@ -30,15 +32,17 @@ canchas/
 │   ├── db/
 │   │   └── database.py        # Engine, SessionLocal, Base, get_db()
 │   ├── models/
-│   │   └── models.py          # ORM: Cancha, Turno, Reserva, Usuario, Ficha
+│   │   └── models.py          # ORM: Cancha, Turno, Reserva, Usuario, Ficha, Descuento
 │   ├── schemas/
 │   │   └── schemas.py         # Pydantic: validación de requests/responses
 │   ├── routers/
 │   │   ├── auth.py            # POST /auth/registro, /auth/login, GET /auth/me
-│   │   ├── turnos.py          # GET /canchas, GET /turnos
+│   │   ├── turnos.py          # GET /canchas, GET /turnos (con descuentos)
 │   │   ├── reservas.py        # POST /reservas, historial, fichas, canje
-│   │   ├── pagos.py           # Link MP, verificación activa, webhook, mock
-│   │   └── dashboard.py       # Panel exclusivo para dueños de cancha
+│   │   ├── pagos.py           # Link MP (total/seña), verificación activa, webhook, mock
+│   │   ├── dashboard.py       # Panel exclusivo para dueños de cancha
+│   │   ├── canchas.py         # PUT /canchas/{id}/precio (actualizar precio)
+│   │   └── descuentos.py      # CRUD de descuentos por franja horaria
 │   ├── services/
 │   │   └── email.py           # Emails transaccionales con Resend
 │   ├── main.py                # Punto de entrada FastAPI
@@ -94,14 +98,16 @@ turnos
 reservas
   id                PK
   turno_id          FK → turnos.id   UNIQUE
-  usuario_id        FK → usuarios.id  nullable  ← si reservó con cuenta
+  usuario_id        FK → usuarios.id  nullable
   nombre_cliente    VARCHAR(150)
   email_cliente     VARCHAR(200)
   telefono_cliente  VARCHAR(30)   nullable
   estado_pago       ENUM('pendiente', 'aprobado', 'rechazado')
   mp_preference_id  VARCHAR(200)  nullable
   mp_payment_id     VARCHAR(200)  nullable
-  canje_fichas      BOOLEAN       ← True si se usaron fichas en vez de pago
+  canje_fichas      BOOLEAN
+  tipo_pago         ENUM('completo', 'senia')   ← completo (100%) o seña (50%)
+  monto_pagado      NUMERIC(10,2) nullable      ← monto efectivamente cobrado
   created_at        TIMESTAMP
   updated_at        TIMESTAMP
 
@@ -113,6 +119,14 @@ fichas
   fichas_canjeadas  INT
   UNIQUE(usuario_id, cancha_id)
   → fichas_disponibles = fichas_acumuladas - fichas_canjeadas
+
+descuentos
+  id            PK
+  cancha_id     FK → canchas.id
+  hora_desde    TIME
+  hora_hasta    TIME
+  porcentaje    INT           ← 10, 15 o 20
+  activo        BOOLEAN
 ```
 
 ---
@@ -172,7 +186,7 @@ CREATE DATABASE canchas_db;
 
 ### 6. Correr el seed
 
-Crea las tablas, las 3 canchas, los turnos de los próximos 7 días y los usuarios dueños:
+Crea las tablas (incluyendo columnas nuevas vía migración automática), las 3 canchas, los turnos de los próximos 7 días y los usuarios dueños:
 
 ```bash
 # Desde la raíz del proyecto
@@ -262,11 +276,12 @@ Los compradores se registran desde la app. Los dueños se crean con el seed y ti
 
 ### Canchas y turnos
 
-| Método | Endpoint       | Descripción                                 |
-| ------ | -------------- | ------------------------------------------- |
-| GET    | `/canchas`     | Lista canchas activas                       |
-| GET    | `/turnos`      | Turnos disponibles (filtros: cancha, fecha) |
-| GET    | `/turnos/{id}` | Detalle de un turno                         |
+| Método | Endpoint              | Descripción                                              |
+| ------ | --------------------- | -------------------------------------------------------- |
+| GET    | `/canchas`            | Lista canchas activas                                    |
+| GET    | `/turnos`             | Turnos disponibles (incluye precios con descuento si aplica) |
+| GET    | `/turnos/{id}`        | Detalle de un turno                                      |
+| PUT    | `/canchas/{id}/precio`| Actualiza el precio de la cancha (solo dueño)            |
 
 ### Reservas
 
@@ -281,12 +296,21 @@ Los compradores se registran desde la app. Los dueños se crean con el seed y ti
 
 ### Pagos
 
-| Método | Endpoint                        | Descripción                                         |
-| ------ | ------------------------------- | --------------------------------------------------- |
-| GET    | `/pagos/link/{reserva_id}`      | Genera el checkout URL de Mercado Pago              |
-| GET    | `/pagos/verificar/{reserva_id}` | Consulta activamente el estado del pago en MP       |
-| POST   | `/pagos/mock-confirmar`         | Simula pago aprobado/rechazado (demo local)         |
-| POST   | `/pagos/webhook`                | IPN de Mercado Pago (solo funciona con URL pública) |
+| Método | Endpoint                              | Descripción                                                   |
+| ------ | ------------------------------------- | ------------------------------------------------------------- |
+| GET    | `/pagos/link/{reserva_id}`            | Genera checkout de MP (`?tipo_pago=completo` o `=senia`)      |
+| GET    | `/pagos/verificar/{reserva_id}`       | Consulta activamente el estado del pago en MP                 |
+| POST   | `/pagos/mock-confirmar`               | Simula pago aprobado/rechazado (demo local)                   |
+| POST   | `/pagos/webhook`                      | IPN de Mercado Pago (solo funciona con URL pública)           |
+
+### Descuentos (solo dueños)
+
+| Método | Endpoint                     | Descripción                          |
+| ------ | ---------------------------- | ------------------------------------ |
+| GET    | `/descuentos`                | Lista descuentos (filtro por cancha) |
+| POST   | `/descuentos`                | Crear nuevo descuento                |
+| PUT    | `/descuentos/{id}/toggle`    | Activar/desactivar descuento         |
+| DELETE | `/descuentos/{id}`           | Eliminar descuento                   |
 
 ### Dashboard (solo dueños)
 
@@ -303,6 +327,34 @@ Los compradores se registran desde la app. Los dueños se crean con el seed y ti
 | ------ | --------- | ------------------- |
 | GET    | `/`       | Health check        |
 | GET    | `/health` | Estado del servicio |
+
+---
+
+## 💳 Funcionalidades detalladas
+
+### Seña (pago del 50%)
+
+Al momento de pagar, el comprador puede elegir entre **"Pagar total"** (100%) o **"Pagar con seña (50%)"**. En ambos casos la reserva se confirma y el turno se bloquea, pero en el historial y dashboard queda registrado como "seña" con el monto pagado. El dueño ve qué reservas son con seña en el panel.
+
+### Descuentos por franja horaria
+
+El dueño accede a la pestaña **"🏷️ Descuentos"** en el dashboard y puede:
+
+1. Crear descuentos seleccionando hora desde, hora hasta y porcentaje (10%, 15% o 20%).
+2. Activar o desactivar descuentos sin eliminarlos.
+3. Eliminar descuentos.
+
+Cuando un turno cae dentro de una franja con descuento activo, en la vista del comprador se muestra:
+
+- Precio original **tachado**
+- Precio con descuento **resaltado en verde**
+- Badge **"-X%"**
+
+El descuento se aplica también al momento del pago (tanto total como seña).
+
+### Precio de cancha
+
+El dueño ve el precio actual de su cancha en el encabezado del dashboard y puede editarlo con el botón **"✏️ Editar precio"**. El cambio impacta inmediatamente en todos los turnos futuros.
 
 ---
 
@@ -396,17 +448,6 @@ Costos estimados con los $200 de crédito del GitHub Student Pack:
 | Frontend (Static Site) | Static       | Gratis       |
 | PostgreSQL             | Dev Database | ~$7          |
 | **Total**              |              | **~$12/mes** |
-
----
-
-## 🚀 Mejoras futuras (para el ADR)
-
-- **Webhook en producción**: con URL pública en DO, el webhook de MP funciona automáticamente y el botón "Verificar" deja de ser necesario.
-- **Renovación automática de turnos**: tarea cron (DigitalOcean Functions) que genera los turnos de la semana siguiente cada domingo.
-- **Notificaciones**: recordatorio por email o Telegram N horas antes del turno.
-- **Cache con Redis**: cachear la lista de turnos disponibles para reducir queries en horas pico.
-- **Escalado**: separar en workers con cola de mensajes (Redis + Celery) para operaciones asíncronas como emails y fichas.
-- **CRUD de canchas**: que cada dueño pueda gestionar sus propios horarios y precios desde el panel.
 
 ---
 
