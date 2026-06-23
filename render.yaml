@@ -10,9 +10,9 @@ services:
           name: canchas-db
           property: connectionString
       - key: CORS_ORIGINS
-        value: "https://bitter-surf-d556.lucascapocasa1.workers.dev"
+        value: "https://computacion-en-la-nube---proyecto-canchaya.pages.dev,http://localhost:5500,http://127.0.0.1:5500"
       - key: FRONTEND_URL
-        value: "https://bitter-surf-d556.lucascapocasa1.workers.dev"
+        value: "https://computacion-en-la-nube---proyecto-canchaya.pages.dev"
       - key: BACKEND_URL
         sync: false
       - key: SECRET_KEY
